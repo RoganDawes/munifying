@@ -1,3 +1,12 @@
+# Send 5 arbitrary bytes via RF to target device with ID 0x03 as short HID++ 1.0 message:
+```
+echo -ne "\x10\x03abcde" > /dev/hidraw0
+```
+
+Note: third byte 'a' is message SubID and could be interpreted as command, so a save value should be chosen for this
+in order to avoid setting registers of the real device by mistake (f.e. 0x80 would be set short). As 0x00..0x7f is
+reserved for notifications and commands start with values >0x80 keeping the MSB of the third byte 0 should be save.
+
 Out
 
 ID: 0x10
