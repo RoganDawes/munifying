@@ -35,6 +35,10 @@ const (
 )
 
 const (
+	UNIFYING_MSG_ID_DEVICE_DISCONNECTION   = 0x40
+	UNIFYING_MSG_ID_DEVICE_CONNECTION      = 0x41
+	UNIFYING_MSG_ID_RECEIVER_LOCKING_INFORMATION      = 0x4a
+
 	UNIFYING_MSG_ID_SET_REGISTER_REQ      = 0x80
 	UNIFYING_MSG_ID_SET_REGISTER_RSP      = 0x80
 	UNIFYING_MSG_ID_GET_REGISTER_REQ      = 0x81
@@ -420,6 +424,80 @@ func main() {
 	}
 
 
+
+	//Get connected device' info
+	fmt.Println("Get connected device info")
+	req = &HidPPMsg{
+		ReportID:   HIDPP_TYPE_SHORT,
+		DeviceID:   0xff,
+		MsgSubID:   UNIFYING_MSG_ID_SET_REGISTER_REQ,
+		Parameters: []byte{UNIFYING_REGISTER_CONNECTION_STATE, 0x02, 0x00, 0x00},
+	}
+	u.SendHidPPMessage(req)
+
+	GetDevInfo:
+	for {
+		rsp, err = u.RcvHidPPMessage(500)
+		if err == nil {
+			switch rsp.MsgSubID {
+			case UNIFYING_MSG_ID_SET_REGISTER_RSP:
+				if	rsp.Parameters[0] == UNIFYING_REGISTER_CONNECTION_STATE && rsp.Parameters[1] == 0x00 {
+					fmt.Println("Get dev info done")
+					break GetDevInfo
+				} else {
+					fmt.Printf("unexpected SET_REGISTER_RESPONSE: %+v\n", rsp)
+				}
+			case UNIFYING_MSG_ID_DEVICE_CONNECTION:
+					fmt.Printf("Device connected notification with parameters: % #x\n", rsp.Parameters)
+			case UNIFYING_MSG_ID_DEVICE_DISCONNECTION:
+					fmt.Printf("Device disconnected notification with parameters: % #x\n", rsp.Parameters)
+			case UNIFYING_MSG_ID_RECEIVER_LOCKING_INFORMATION:
+					fmt.Printf("Receiver locking information notification with parameters: % #x\n", rsp.Parameters)
+			case UNIFYING_MSG_ID_ERROR_MSG:
+					fmt.Printf("Receiver error message notification with parameters: % #x\n", rsp.Parameters)
+			}
+		}
+	}
+/*
+	> 10ff80b201123c // enable pairing (p0: 0x01 - Open Lock, p1: 0x12 - Device Number ??, p2: 0x3c == 60 sec) //timeout of 0 would be default of 30sec
+	< 10ff4a01000000 //Notif Lock open (pairing on)
+	< 10ff80b2000000 //SetRegResp for enable pairing
+*/
+
+	//Enable pairing
+	pairingTimeout := byte(60)
+	fmt.Printf("Enable pairing for %d seconds\n", pairingTimeout)
+	req = &HidPPMsg{
+		ReportID:   HIDPP_TYPE_SHORT,
+		DeviceID:   0xff,
+		MsgSubID:   UNIFYING_MSG_ID_SET_REGISTER_REQ,
+		Parameters: []byte{UNIFYING_REGISTER_PAIRING, 0x01, 0x04, pairingTimeout}, //param1: lock open, param2: device index (the unused one which will be announced ??), param3: timeout
+	}
+	u.SendHidPPMessage(req)
+
+	//PairingLoop:
+	for {
+		rsp, err = u.RcvHidPPMessage(500)
+		if err == nil {
+			switch rsp.MsgSubID {
+			case UNIFYING_MSG_ID_SET_REGISTER_RSP:
+				if	rsp.Parameters[0] == UNIFYING_REGISTER_PAIRING {
+					fmt.Println("Pairing request send successfully")
+					//break PairingLoop
+				} else {
+					fmt.Printf("unexpected SET_REGISTER_RESPONSE: %+v\n", rsp)
+				}
+			case UNIFYING_MSG_ID_DEVICE_CONNECTION:
+					fmt.Printf("Device connected notification with parameters: % #x\n", rsp.Parameters)
+			case UNIFYING_MSG_ID_DEVICE_DISCONNECTION:
+					fmt.Printf("Device disconnected notification with parameters: % #x\n", rsp.Parameters)
+			case UNIFYING_MSG_ID_RECEIVER_LOCKING_INFORMATION:
+					fmt.Printf("Receiver locking information notification with parameters: % #x\n", rsp.Parameters)
+			case UNIFYING_MSG_ID_ERROR_MSG:
+					fmt.Printf("Receiver error message notification with parameters: % #x\n", rsp.Parameters)
+			}
+		}
+	}
 
 
 	go func() {
