@@ -5,380 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"github.com/google/gousb"
-	"os"
-	"os/signal"
 	"time"
 )
-
-var (
-	eNoDongle        = errors.New("No Unifying dongle found")
-	eNoHidPPMsg      = errors.New("No valid HID++ 1.0 report")
-	eNoHidDJReport   = errors.New("No valid DJ report")
-	eNoHidPPReportID = errors.New("No valid HID++ 1.0 report type (set to USB_REPORT_TYPE_HIDPP_SHORT or USB_REPORT_TYPE_HIDPP_LONG)")
-)
-
-const (
-	UNIFYING_VID gousb.ID = 0x046d
-	UNIFYING_PID gousb.ID = 0xc52b
-)
-
-const (
-	USB_REPORT_TYPE_DJ_SHORT_LEN         = 15
-	USB_REPORT_TYPE_DJ_LONG_LEN          = 32
-	USB_REPORT_TYPE_DJ_SHORT_PAYLOAD_LEN = 12
-	USB_REPORT_TYPE_DJ_LONG_PAYLOAD_LEN  = 29
-
-	USB_REPORT_TYPE_HIDPP_SHORT_LEN        = 7
-	USB_REPORT_TYPE_HIDPP_LONG_LEN         = 20
-	USB_REPORT_TYPE_HIDPP_PAYLOAD_LEN      = 4
-	USB_REPORT_TYPE_HIDPP_LONG_PAYLOAD_LEN = 17
-)
-
-type USBReportType byte
-
-const (
-	USB_REPORT_TYPE_DJ_SHORT    USBReportType = 0x20
-	USB_REPORT_TYPE_DJ_LONG     USBReportType = 0x21
-	USB_REPORT_TYPE_HIDPP_SHORT USBReportType = 0x10
-	USB_REPORT_TYPE_HIDPP_LONG  USBReportType = 0x11
-)
-
-func (t USBReportType) String() string {
-	switch t {
-	case USB_REPORT_TYPE_HIDPP_SHORT:
-		return "HID++ short message"
-	case USB_REPORT_TYPE_HIDPP_LONG:
-		return "HID++ long message"
-	case USB_REPORT_TYPE_DJ_SHORT:
-		return "DJ Report short"
-	case USB_REPORT_TYPE_DJ_LONG:
-		return "DJ Report long"
-	}
-	return fmt.Sprintf("Unknown USB report type %02x", t)
-}
-
-type USBReport interface {
-	FromWire(payload []byte) (err error)
-	ToWire() (payload []byte, err error)
-	IsHIDPP() bool
-	IsDJ() bool
-
-	fmt.Stringer
-	//String(9 should be present to, but we don't force Stringer interface
-}
-
-type HidPPMsgSubID byte
-
-const (
-	UNIFYING_HIDPP_MSG_ID_DEVICE_DISCONNECTION         HidPPMsgSubID = 0x40
-	UNIFYING_HIDPP_MSG_ID_DEVICE_CONNECTION            HidPPMsgSubID = 0x41
-	UNIFYING_HIDPP_MSG_ID_RECEIVER_LOCKING_INFORMATION HidPPMsgSubID = 0x4a
-
-	UNIFYING_HIDPP_MSG_ID_SET_REGISTER_REQ      HidPPMsgSubID = 0x80
-	UNIFYING_HIDPP_MSG_ID_SET_REGISTER_RSP      HidPPMsgSubID = 0x80
-	UNIFYING_HIDPP_MSG_ID_GET_REGISTER_REQ      HidPPMsgSubID = 0x81
-	UNIFYING_HIDPP_MSG_ID_GET_REGISTER_RSP      HidPPMsgSubID = 0x81
-	UNIFYING_HIDPP_MSG_ID_SET_LONG_REGISTER_REQ HidPPMsgSubID = 0x82
-	UNIFYING_HIDPP_MSG_ID_SET_LONG_REGISTER_RSP HidPPMsgSubID = 0x82
-	UNIFYING_HIDPP_MSG_ID_GET_LONG_REGISTER_REQ HidPPMsgSubID = 0x83
-	UNIFYING_HIDPP_MSG_ID_GET_LONG_REGISTER_RSP HidPPMsgSubID = 0x83
-
-	UNIFYING_HIDPP_MSG_ID_ERROR_MSG HidPPMsgSubID = 0x8f
-)
-
-func (t HidPPMsgSubID) String() string {
-	switch t {
-	case UNIFYING_HIDPP_MSG_ID_DEVICE_DISCONNECTION:
-		return "DEVICE DISCONNECTION"
-	case UNIFYING_HIDPP_MSG_ID_DEVICE_CONNECTION:
-		return "DEVICE CONNECTION"
-	case UNIFYING_HIDPP_MSG_ID_RECEIVER_LOCKING_INFORMATION:
-		return "RECEIVER LOCKING INFORMATION"
-	case UNIFYING_HIDPP_MSG_ID_SET_REGISTER_REQ: //Same for response
-		return "SET REGISTER SHORT"
-	case UNIFYING_HIDPP_MSG_ID_GET_REGISTER_REQ: //Same for response
-		return "GET REGISTER SHORT"
-	case UNIFYING_HIDPP_MSG_ID_SET_LONG_REGISTER_REQ: //Same for response
-		return "SET REGISTER LONG"
-	case UNIFYING_HIDPP_MSG_ID_GET_LONG_REGISTER_REQ: //Same for response
-		return "GET REGISTER LONG"
-
-	}
-	return fmt.Sprintf("Unknown HID++ SubID %02x", t)
-}
-
-type DJReportType byte
-
-const (
-	UNIFYING_DJ_REPORT_TYPE_RF_KEYBOARD          DJReportType = 0x01
-	UNIFYING_DJ_REPORT_TYPE_RF_MOUSE             DJReportType = 0x02
-	UNIFYING_DJ_REPORT_TYPE_RF_CONSUMER_CONTROL  DJReportType = 0x03
-	UNIFYING_DJ_REPORT_TYPE_RF_SYSTEM_CONTROL    DJReportType = 0x04
-	UNIFYING_DJ_REPORT_TYPE_RF_MSFT_MEDIA_CENTER DJReportType = 0x08
-	UNIFYING_DJ_REPORT_TYPE_RF_LED               DJReportType = 0x0e
-
-	UNIFYING_DJ_REPORT_TYPE_NOTIFICATION_DEVICE_UNPAIRED   DJReportType = 0x40
-	UNIFYING_DJ_REPORT_TYPE_NOTIFICATION_DEVICE_PAIRED     DJReportType = 0x41
-	UNIFYING_DJ_REPORT_TYPE_NOTIFICATION_CONNECTION_STATUS DJReportType = 0x42
-
-	UNIFYING_DJ_REPORT_TYPE_NOTIFICATION_ERROR DJReportType = 0x7f
-
-	UNIFYING_DJ_REPORT_TYPE_CMD_SWITCH_AND_KEEP_ALIVE DJReportType = 0x80
-	UNIFYING_DJ_REPORT_TYPE_CMD_GET_PAIRED_DEVICES    DJReportType = 0x81
-)
-
-func (t DJReportType) String() string {
-	switch t {
-	case UNIFYING_DJ_REPORT_TYPE_RF_KEYBOARD:
-		return "RF KEYBOARD"
-	case UNIFYING_DJ_REPORT_TYPE_RF_MOUSE:
-		return "RF MOUSE"
-	case UNIFYING_DJ_REPORT_TYPE_RF_CONSUMER_CONTROL:
-		return "RF CONSUMER CONTROL"
-	case UNIFYING_DJ_REPORT_TYPE_RF_SYSTEM_CONTROL:
-		return "RF SYSTEM CONTROL"
-	case UNIFYING_DJ_REPORT_TYPE_RF_MSFT_MEDIA_CENTER:
-		return "RF MICROSOFT MEDIA CENTER"
-	case UNIFYING_DJ_REPORT_TYPE_RF_LED:
-		return "RF LED"
-	case UNIFYING_DJ_REPORT_TYPE_NOTIFICATION_DEVICE_UNPAIRED:
-		return "NOTIFICATION DEVICE UNPAIRED"
-	case UNIFYING_DJ_REPORT_TYPE_NOTIFICATION_DEVICE_PAIRED:
-		return "NOTIFICATION DEVICE PAIRED"
-	case UNIFYING_DJ_REPORT_TYPE_NOTIFICATION_CONNECTION_STATUS:
-		return "NOTIFICATION CONNECTION STATUS"
-	case UNIFYING_DJ_REPORT_TYPE_NOTIFICATION_ERROR:
-		return "NOTIFICATION ERROR"
-	case UNIFYING_DJ_REPORT_TYPE_CMD_SWITCH_AND_KEEP_ALIVE:
-		return "COMMAND SWITCH AND KEEP ALIVE"
-	case UNIFYING_DJ_REPORT_TYPE_CMD_GET_PAIRED_DEVICES:
-		return "COMMAND GET PAIRED DEVICES"
-
-	}
-	return fmt.Sprintf("Unknown DJ Report type %02x", t)
-}
-
-const (
-	UNIFYING_DJ_REPORT_RF_TYPE_BITFIELD_KEYBOARD         = 0x00000002
-	UNIFYING_DJ_REPORT_RF_TYPE_BITFIELD_MOUSE            = 0x00000004
-	UNIFYING_DJ_REPORT_RF_TYPE_BITFIELD_CONSUMER_CONTROL = 0x00000008
-	UNIFYING_DJ_REPORT_RF_TYPE_BITFIELD_POWER_KEYS       = 0x00000010
-	UNIFYING_DJ_REPORT_RF_TYPE_BITFIELD_MEDIA_CENTER     = 0x00000100
-	UNIFYING_DJ_REPORT_RF_TYPE_BITFIELD_KEYBOARD_LEDS    = 0x00004000
-	UNIFYING_DJ_REPORT_RF_TYPE_BITFIELD_HIDPP_SHORT      = 0x00010000 //not on USB as HID report, but in respective RF report
-	UNIFYING_DJ_REPORT_RF_TYPE_BITFIELD_HIDPP_LONG       = 0x00020000 //not on USB as HID report, but in respective RF report
-)
-
-type HidPPRegister byte
-const (
-	UNIFYING_DONGLE_HIDPP_REGISTER_WIRELESS_NOTIFICATIONS HidPPRegister = 0x00
-	UNIFYING_DONGLE_HIDPP_REGISTER_CONNECTION_STATE       HidPPRegister = 0x02
-	UNIFYING_DONGLE_HIDPP_REGISTER_PAIRING                HidPPRegister = 0xb2
-	UNIFYING_DONGLE_HIDPP_REGISTER_DEVICE_ACTIVITY        HidPPRegister = 0xb3
-	UNIFYING_DONGLE_HIDPP_REGISTER_PAIRING_INFORMATION    HidPPRegister = 0xb5
-	UNIFYING_DONGLE_HIDPP_REGISTER_FIRMWARE               HidPPRegister = 0xf1
-)
-func (t HidPPRegister) String() string {
-	switch t {
-	case UNIFYING_DONGLE_HIDPP_REGISTER_WIRELESS_NOTIFICATIONS:
-		return "REGISTER WIRELESS NOTIFICATIONS"
-	case UNIFYING_DONGLE_HIDPP_REGISTER_CONNECTION_STATE:
-		return "REGISTER CONNECTION STATE"
-	case UNIFYING_DONGLE_HIDPP_REGISTER_PAIRING:
-		return "REGISTER PAIRING"
-	case UNIFYING_DONGLE_HIDPP_REGISTER_DEVICE_ACTIVITY:
-		return "REGISTER DEVICE ACTIVITY"
-	case UNIFYING_DONGLE_HIDPP_REGISTER_PAIRING_INFORMATION:
-		return "REGISTER PAIRING INFORMATION"
-	case UNIFYING_DONGLE_HIDPP_REGISTER_FIRMWARE:
-		return "REGISTER FIRMWARE"
-	}
-	return fmt.Sprintf("Unknown HID++ Register %02x", t)
-}
-
-
-// for write/read parameters of short read/write from/to wireless notification register (0x00)
-const (
-	UNIYING_WIRELESS_NOTIFICATIONS_P0_BATTERY_STATUS_MASK = (1 << 4)
-
-	UNIYING_WIRELESS_NOTIFICATIONS_P1_WIRELESS_NOTIFICATIONS_MASK = (1 << 0)
-	UNIYING_WIRELESS_NOTIFICATIONS_P1_SOFTWARE_PRESENT_MASK       = (1 << 3)
-)
-
-type DJReport struct {
-	ReportID   USBReportType
-	DeviceID   byte
-	Type       DJReportType
-	Parameters []byte
-}
-
-func (r *DJReport) IsHIDPP() bool {
-	return r.ReportID == USB_REPORT_TYPE_HIDPP_LONG || r.ReportID == USB_REPORT_TYPE_HIDPP_SHORT
-}
-
-func (r *DJReport) IsDJ() bool {
-	return r.ReportID == USB_REPORT_TYPE_DJ_LONG || r.ReportID == USB_REPORT_TYPE_DJ_SHORT
-}
-
-func (r *DJReport) String() string {
-	return fmt.Sprintf("USB Report type: %s, DeviceID: %#02x, DJ Type: %s, Params: % #x", r.ReportID, r.DeviceID, r.Type, r.Parameters)
-}
-
-func (r *DJReport) IsRFReport() bool {
-	return r.Type < 0x40
-}
-
-func (r *DJReport) IsNotification() bool {
-	return r.Type > 0x3f && r.Type < 0x80
-}
-
-func (r *DJReport) IsCommand() bool {
-	return r.Type > 0x7f
-}
-
-func (r *DJReport) FromWire(payload []byte) (err error) {
-	if len(payload) == USB_REPORT_TYPE_DJ_LONG_LEN && payload[0] == byte(USB_REPORT_TYPE_DJ_LONG) {
-		r.ReportID = USB_REPORT_TYPE_DJ_LONG
-		r.DeviceID = payload[1]
-		r.Type = DJReportType(payload[2])
-		r.Parameters = make([]byte, USB_REPORT_TYPE_DJ_LONG_PAYLOAD_LEN)
-		copy(r.Parameters, payload[3:])
-		return
-	}
-	if len(payload) == USB_REPORT_TYPE_DJ_SHORT_LEN && payload[0] == byte(USB_REPORT_TYPE_DJ_SHORT) {
-		r.ReportID = USB_REPORT_TYPE_DJ_SHORT
-		r.DeviceID = payload[1]
-		r.Type = DJReportType(payload[2])
-		r.Parameters = make([]byte, USB_REPORT_TYPE_DJ_SHORT_PAYLOAD_LEN)
-		copy(r.Parameters, payload[3:])
-		return
-	}
-
-	return eNoHidDJReport
-}
-
-func (r *DJReport) ToWire() (payload []byte, err error) {
-	if r.ReportID == USB_REPORT_TYPE_DJ_SHORT {
-		payload := make([]byte, USB_REPORT_TYPE_DJ_SHORT_LEN)
-		payload[0] = byte(r.ReportID)
-		payload[1] = r.DeviceID
-		payload[2] = byte(r.Type)
-		if r.Parameters != nil {
-			copy(payload[3:], r.Parameters)
-		}
-		return payload, nil
-	}
-
-	if r.ReportID == USB_REPORT_TYPE_DJ_LONG {
-		payload := make([]byte, USB_REPORT_TYPE_DJ_LONG_LEN)
-		payload[0] = byte(r.ReportID)
-		payload[1] = r.DeviceID
-		payload[2] = byte(r.Type)
-		if r.Parameters != nil {
-			copy(payload[3:], r.Parameters)
-		}
-		return payload, nil
-	}
-
-	err = eNoHidDJReport
-	return
-}
-
-type HidPPMsg struct {
-	ReportID   USBReportType
-	DeviceID   byte
-	MsgSubID   HidPPMsgSubID
-	Parameters []byte
-}
-
-func (r *HidPPMsg) String() (res string) {
-	res = fmt.Sprintf("USB Report type: %s, DeviceID: %#02x, SubID: %s, Params: % #x", r.ReportID, r.DeviceID, r.MsgSubID, r.Parameters)
-	switch r.MsgSubID {
-	case UNIFYING_HIDPP_MSG_ID_GET_REGISTER_RSP:
-		fallthrough
-	case UNIFYING_HIDPP_MSG_ID_SET_LONG_REGISTER_RSP:
-		fallthrough
-	case UNIFYING_HIDPP_MSG_ID_GET_LONG_REGISTER_RSP:
-		fallthrough
-	case UNIFYING_HIDPP_MSG_ID_SET_REGISTER_RSP:
-		res += fmt.Sprintf("\n\tRegister address: %s", HidPPRegister(r.Parameters[0]))
-		res += fmt.Sprintf("\n\tValue: % #x", r.Parameters[1:])
-	case UNIFYING_HIDPP_MSG_ID_DEVICE_DISCONNECTION:
-		res += fmt.Sprintf("\n\tDevice disconnected: %v", r.Parameters[0] == 0x02)
-	case UNIFYING_HIDPP_MSG_ID_DEVICE_CONNECTION:
-		res += fmt.Sprintf("\n\tProtocol type: %#02x", r.Parameters[0])
-		res += fmt.Sprintf("\n\tDevice type: %#02x", r.Parameters[1] & 0x0F)
-		res += fmt.Sprintf("\n\tSoftware present: %v", r.Parameters[1] & 0x10 > 0)
-		res += fmt.Sprintf("\n\tLink encrypted: %v", r.Parameters[1] & 0x20 > 0)
-		res += fmt.Sprintf("\n\tLink established: %v", r.Parameters[1] & 0x40 == 0)
-		res += fmt.Sprintf("\n\tConnection with payload: %v", r.Parameters[1] & 0x80 > 0)
-		res += fmt.Sprintf("\n\tWireless PID: 0x%02x%02x", r.Parameters[3], r.Parameters[2])
-
-/*
-	case UNIFYING_HIDPP_MSG_ID_RECEIVER_LOCKING_INFORMATION:
-		fmt.Printf("Receiver locking information notification with parameters: % #x\n", rsp.Parameters)
-	case UNIFYING_HIDPP_MSG_ID_ERROR_MSG:
-		fmt.Printf("Receiver error message notification with parameters: % #x\n", rsp.Parameters)
-*/
-	}
-	return res
-}
-
-func (r *HidPPMsg) FromWire(payload []byte) (err error) {
-	if len(payload) == USB_REPORT_TYPE_HIDPP_LONG_LEN && payload[0] == byte(USB_REPORT_TYPE_HIDPP_LONG) {
-		r.ReportID = USB_REPORT_TYPE_HIDPP_LONG
-		r.DeviceID = payload[1]
-		r.MsgSubID = HidPPMsgSubID(payload[2])
-		r.Parameters = make([]byte, USB_REPORT_TYPE_HIDPP_LONG_PAYLOAD_LEN)
-		copy(r.Parameters, payload[3:])
-		return
-	}
-	if len(payload) == USB_REPORT_TYPE_HIDPP_SHORT_LEN && payload[0] == byte(USB_REPORT_TYPE_HIDPP_SHORT) {
-		r.ReportID = USB_REPORT_TYPE_HIDPP_SHORT
-		r.DeviceID = payload[1]
-		r.MsgSubID = HidPPMsgSubID(payload[2])
-		r.Parameters = make([]byte, USB_REPORT_TYPE_HIDPP_PAYLOAD_LEN)
-		copy(r.Parameters, payload[3:])
-		return
-	}
-
-	return eNoHidPPMsg
-}
-
-func (r *HidPPMsg) ToWire() (payload []byte, err error) {
-	if r.ReportID == USB_REPORT_TYPE_HIDPP_SHORT {
-		payload := make([]byte, USB_REPORT_TYPE_HIDPP_SHORT_LEN)
-		payload[0] = byte(r.ReportID)
-		payload[1] = r.DeviceID
-		payload[2] = byte(r.MsgSubID)
-		if r.Parameters != nil {
-			copy(payload[3:], r.Parameters)
-		}
-		return payload, nil
-	}
-
-	if r.ReportID == USB_REPORT_TYPE_HIDPP_LONG {
-		payload := make([]byte, USB_REPORT_TYPE_HIDPP_LONG_LEN)
-		payload[0] = byte(r.ReportID)
-		payload[1] = r.DeviceID
-		payload[2] = byte(r.MsgSubID)
-		if r.Parameters != nil {
-			copy(payload[3:], r.Parameters)
-		}
-		return payload, nil
-	}
-
-	err = eNoHidPPReportID
-	return
-}
-
-func (r *HidPPMsg) IsHIDPP() bool {
-	return r.ReportID == USB_REPORT_TYPE_HIDPP_LONG || r.ReportID == USB_REPORT_TYPE_HIDPP_SHORT
-}
-
-func (r *HidPPMsg) IsDJ() bool {
-	return r.ReportID == USB_REPORT_TYPE_DJ_LONG || r.ReportID == USB_REPORT_TYPE_DJ_SHORT
-}
 
 type Unifying struct {
 	UsbCtx     *gousb.Context
@@ -536,6 +164,7 @@ func (u *Unifying) Close() {
 	}
 }
 
+
 func NewUnifying() (res *Unifying, err error) {
 	res = &Unifying{}
 
@@ -605,6 +234,64 @@ Outer:
 	return
 }
 
+func (u *Unifying) HIDPP_SendAndCollectResponses(deviceID byte, id HidPPMsgSubID, parameters []byte) (responseReports []USBReport, err error) {
+	params := make([]byte, USB_REPORT_TYPE_HIDPP_SHORT_PAYLOAD_LEN)
+	reportType := USB_REPORT_TYPE_HIDPP_SHORT
+
+	if len(parameters) > USB_REPORT_TYPE_HIDPP_SHORT_PAYLOAD_LEN {
+		params = make([]byte, USB_REPORT_TYPE_HIDPP_LONG_PAYLOAD_LEN)
+		reportType = USB_REPORT_TYPE_HIDPP_LONG
+	}
+
+	copy(params, parameters)
+
+	hidppReq := &HidPPMsg{
+		ReportID:   reportType,
+		DeviceID:   deviceID,
+		MsgSubID:   id,
+		Parameters: params,
+	}
+	u.SendUSBReport(hidppReq)
+
+	//We collect all response reports (DJ and HID++), till ...
+	//  1) we receive the response matching the request
+	//  2) we receive an error matching the request
+	//
+	// We send back an error, if USB response timeout is reached, along with reports collected so far
+
+	for {
+		rspUSB, err := u.ReceiveUSBReport(500)
+		if err != nil {
+			return responseReports,errors.New("USB response timeout")
+		} else {
+			responseReports = append(responseReports, rspUSB)
+
+			// abort if report aligns to request
+			if rspUSB.IsHIDPP() {
+				rspHIDpp := rspUSB.(*HidPPMsg)
+
+				// check if response
+				// Note: we don't check parameters here, f.e. for a get register command, first param would be the register
+				// and should match in the response, but receiving a response for a successive request is unlikely.
+				//
+				// Checking the MsgSubID against the one of the request works only, because the request IDs and response IDs
+				// are the same for currently known ones (f.e. SET_REGISTER_REQ == SET_REGISTER_RSP == 0x80)
+				if rspHIDpp.DeviceID == deviceID && rspHIDpp.MsgSubID == id {
+					// likely final response, return
+					return responseReports,nil
+				}
+
+				if rspHIDpp.DeviceID == deviceID && rspHIDpp.MsgSubID == UNIFYING_HIDPP_MSG_ID_ERROR_MSG && rspHIDpp.Parameters[0] == byte(id) {
+					// likely final response, return
+					return responseReports, errors.New("HID++ error response")
+				}
+			}
+		}
+	}
+
+}
+
+
 func main() {
 	u, err := NewUnifying()
 	if err != nil {
@@ -641,150 +328,45 @@ func main() {
 		fmt.Printf("Wrong resp1: %+v\n", rsp)
 	}
 
-	// Request major/minor dongle level of firmware from firmware register
-	req = &HidPPMsg{
-		ReportID:   USB_REPORT_TYPE_HIDPP_SHORT,
-		DeviceID:   0xff,
-		MsgSubID:   UNIFYING_HIDPP_MSG_ID_GET_REGISTER_REQ,
-		Parameters: []byte{byte(UNIFYING_DONGLE_HIDPP_REGISTER_FIRMWARE), 0x01}, //Param 03, no pairing info, but info on receiver itself
-	}
-	u.SendUSBReport(req)
-
-	rsp, err = u.ReceiveUSBReport(500)
-	if err == nil && rsp.IsHIDPP() {
-		hidppRsp := rsp.(*HidPPMsg)
-		if hidppRsp.MsgSubID == UNIFYING_HIDPP_MSG_ID_GET_REGISTER_RSP &&
-			hidppRsp.Parameters[0] == byte(UNIFYING_DONGLE_HIDPP_REGISTER_FIRMWARE) &&
-			hidppRsp.Parameters[1] == 0x01 {
-			major := hidppRsp.Parameters[2]
-			minor := hidppRsp.Parameters[3]
-			fmt.Printf("Firmware maj.min: %.2x.%.2x\n", major, minor)
-		} else {
-			fmt.Println("Wrong HID++ response:", hidppRsp.String())
+	// Request dongle firmware version from firmware register
+	fmt.Println("!!!Request dongle firmware version from firmware register")
+	responses,err := u.HIDPP_SendAndCollectResponses(0xff, UNIFYING_HIDPP_MSG_ID_GET_REGISTER_REQ, []byte{byte(UNIFYING_DONGLE_HIDPP_REGISTER_FIRMWARE), 0x01, 0x00})
+	for _,r := range responses {
+		fmt.Println(r.String())
 		}
-	} else {
-		fmt.Printf("Wrong resp2: %+v\n", rsp)
-	}
+	fmt.Println("!!!Request dongle firmware version from firmware register\n")
 
-	// Request dongle firmware patch version from firmware register
-	req = &HidPPMsg{
-		ReportID:   USB_REPORT_TYPE_HIDPP_SHORT,
-		DeviceID:   0xff,
-		MsgSubID:   UNIFYING_HIDPP_MSG_ID_GET_REGISTER_REQ,
-		Parameters: []byte{byte(UNIFYING_DONGLE_HIDPP_REGISTER_FIRMWARE), 0x02}, //Param 03, no pairing info, but info on receiver itself
-	}
-	u.SendUSBReport(req)
-
-	rsp, err = u.ReceiveUSBReport(500)
-	if err == nil && rsp.IsHIDPP() {
-		hidppRsp := rsp.(*HidPPMsg)
-		if hidppRsp.MsgSubID == UNIFYING_HIDPP_MSG_ID_GET_REGISTER_RSP &&
-			hidppRsp.Parameters[0] == byte(UNIFYING_DONGLE_HIDPP_REGISTER_FIRMWARE) &&
-			hidppRsp.Parameters[1] == 0x02 {
-			patchMSB := hidppRsp.Parameters[2]
-			patchLSB := hidppRsp.Parameters[3]
-			fmt.Printf("Firmware patch: %.2x%.2x\n", patchMSB, patchLSB)
-		} else {
-			fmt.Println("Wrong HID++ response:", hidppRsp.String())
+	// Request dongle firmware build version from firmware register
+	fmt.Println("!!!Request dongle firmware build version from firmware register")
+	responses,err = u.HIDPP_SendAndCollectResponses(0xff, UNIFYING_HIDPP_MSG_ID_GET_REGISTER_REQ, []byte{byte(UNIFYING_DONGLE_HIDPP_REGISTER_FIRMWARE), 0x02, 0x00})
+	for _,r := range responses {
+		fmt.Println(r.String())
 		}
-	} else {
-		fmt.Printf("Wrong resp3: %+v\n", rsp)
-	}
+	fmt.Println("!!!Request dongle firmware build version from firmware register\n")
 
-	// Request dongle bootloader patch version from firmware register
-	req = &HidPPMsg{
-		ReportID:   USB_REPORT_TYPE_HIDPP_SHORT,
-		DeviceID:   0xff,
-		MsgSubID:   UNIFYING_HIDPP_MSG_ID_GET_REGISTER_REQ,
-		Parameters: []byte{byte(UNIFYING_DONGLE_HIDPP_REGISTER_FIRMWARE), 0x04}, //Param 03, no pairing info, but info on receiver itself
-	}
-	u.SendUSBReport(req)
-
-	rsp, err = u.ReceiveUSBReport(500)
-	if err == nil && rsp.IsHIDPP() {
-		hidppRsp := rsp.(*HidPPMsg)
-		if hidppRsp.MsgSubID == UNIFYING_HIDPP_MSG_ID_GET_REGISTER_RSP &&
-			hidppRsp.Parameters[0] == byte(UNIFYING_DONGLE_HIDPP_REGISTER_FIRMWARE) &&
-			hidppRsp.Parameters[1] == 0x04 {
-			major := hidppRsp.Parameters[2]
-			minor := hidppRsp.Parameters[3]
-			fmt.Printf("Bootloader maj.min: %.2x.%.2x\n", major, minor)
-		} else {
-			fmt.Println("Wrong HID++ response:", hidppRsp.String())
+	// Request dongle bootloader version from firmware register
+	fmt.Println("!!!Request dongle bootloader version from firmware register")
+	responses,err = u.HIDPP_SendAndCollectResponses(0xff, UNIFYING_HIDPP_MSG_ID_GET_REGISTER_REQ, []byte{byte(UNIFYING_DONGLE_HIDPP_REGISTER_FIRMWARE), 0x04, 0x00})
+	for _,r := range responses {
+		fmt.Println(r.String())
 		}
-	} else {
-
-		fmt.Printf("Wrong resp4: %+v\n", rsp)
-	}
+	fmt.Println("!!!Request dongle bootloader version from firmware register\n")
 
 	//Enable wireless notifications (to be able to receive infos via device connect notify on new devices)
-	req = &HidPPMsg{
-		ReportID:   USB_REPORT_TYPE_HIDPP_SHORT,
-		DeviceID:   0xff,
-		MsgSubID:   UNIFYING_HIDPP_MSG_ID_SET_REGISTER_REQ,
-		Parameters: []byte{byte(UNIFYING_DONGLE_HIDPP_REGISTER_WIRELESS_NOTIFICATIONS), 0x00, 0x01, 0x00},
+	fmt.Println("!!!Enable wireless notifications")
+	responses,err = u.HIDPP_SendAndCollectResponses(0xff, UNIFYING_HIDPP_MSG_ID_SET_REGISTER_REQ, []byte{byte(UNIFYING_DONGLE_HIDPP_REGISTER_WIRELESS_NOTIFICATIONS), 0x00, 0x01})
+	for _,r := range responses {
+		fmt.Println(r.String())
 	}
-	u.SendUSBReport(req)
+	fmt.Println("!!!END enable wireless notifications\n")
 
-	rsp, err = u.ReceiveUSBReport(500)
-	rsp, err = u.ReceiveUSBReport(500)
-	if err == nil && rsp.IsHIDPP() {
-		hidppRsp := rsp.(*HidPPMsg)
-		if hidppRsp.MsgSubID == UNIFYING_HIDPP_MSG_ID_SET_REGISTER_RSP &&
-			hidppRsp.Parameters[0] == byte(UNIFYING_DONGLE_HIDPP_REGISTER_WIRELESS_NOTIFICATIONS) &&
-			hidppRsp.Parameters[1] == 0x00 {
-
-			fmt.Printf("Wireless notifications enabled\n")
-		}
-	} else {
-		fmt.Printf("Wrong resp4: %+v\n", rsp)
+	fmt.Println("!!!Get connected device info")
+	responses,err = u.HIDPP_SendAndCollectResponses(0xff, UNIFYING_HIDPP_MSG_ID_SET_REGISTER_REQ, []byte{byte(UNIFYING_DONGLE_HIDPP_REGISTER_CONNECTION_STATE), 0x02})
+	for _,r := range responses {
+		fmt.Println(r.String())
 	}
+	fmt.Println("!!!END get connected device info\n")
 
-	//Get connected device' info
-	fmt.Println("Get connected device info")
-	req = &HidPPMsg{
-		ReportID:   USB_REPORT_TYPE_HIDPP_SHORT,
-		DeviceID:   0xff,
-		MsgSubID:   UNIFYING_HIDPP_MSG_ID_SET_REGISTER_REQ,
-		Parameters: []byte{byte(UNIFYING_DONGLE_HIDPP_REGISTER_CONNECTION_STATE), 0x02, 0x00, 0x00},
-	}
-	u.SendUSBReport(req)
-
-GetDevInfo:
-	for {
-		rsp, err = u.ReceiveUSBReport(500)
-
-		if err == nil && rsp.IsDJ() {
-			djRsp := rsp.(*DJReport)
-			djRsp.String()
-
-		} else if err == nil && rsp.IsHIDPP() {
-			hidppRsp := rsp.(*HidPPMsg)
-			switch hidppRsp.MsgSubID {
-			case UNIFYING_HIDPP_MSG_ID_SET_REGISTER_RSP:
-				if hidppRsp.Parameters[0] == byte(UNIFYING_DONGLE_HIDPP_REGISTER_CONNECTION_STATE) && hidppRsp.Parameters[1] == 0x00 {
-					fmt.Println("Get dev info done")
-					break GetDevInfo
-				} else {
-					fmt.Printf("unexpected SET_REGISTER_RESPONSE: %+v\n", hidppRsp)
-				}
-			case UNIFYING_HIDPP_MSG_ID_DEVICE_CONNECTION:
-				fmt.Printf("Device connected notification with parameters: % #x\n", hidppRsp.Parameters)
-			case UNIFYING_HIDPP_MSG_ID_DEVICE_DISCONNECTION:
-				fmt.Printf("Device disconnected notification with parameters: % #x\n", hidppRsp.Parameters)
-			case UNIFYING_HIDPP_MSG_ID_RECEIVER_LOCKING_INFORMATION:
-				fmt.Printf("Receiver locking information notification with parameters: % #x\n", hidppRsp.Parameters)
-			case UNIFYING_HIDPP_MSG_ID_ERROR_MSG:
-				fmt.Printf("Receiver error message notification with parameters: % #x\n", hidppRsp.Parameters)
-			}
-		} else {
-			fmt.Printf("Unknown USB Report type: % #x\n", rsp)
-		}
-
-		if err == nil {
-
-		}
-	}
 	/*
 		> 10ff80b201123c // enable pairing (p0: 0x01 - Open Lock, p1: 0x12 - Device Number ??, p2: 0x3c == 60 sec) //timeout of 0 would be default of 30sec
 		< 10ff4a01000000 //Notif Lock open (pairing on)
@@ -792,6 +374,18 @@ GetDevInfo:
 	*/
 
 	//Enable pairing
+	connectDevices := byte(0x01) //open lock
+	deviceNumber := byte(0x01) //According to specs: Same value as device index transmitted in 0x41 notification, but we haven't tx'ed anything
+	openLockTimeout := byte(60)
+	fmt.Printf("!!!Enable pairing for %d seconds\n", openLockTimeout)
+	responses,err = u.HIDPP_SendAndCollectResponses(0xff, UNIFYING_HIDPP_MSG_ID_SET_REGISTER_REQ, []byte{byte(UNIFYING_DONGLE_HIDPP_REGISTER_PAIRING), connectDevices, deviceNumber, openLockTimeout})
+	for _,r := range responses {
+		fmt.Println(r.String())
+	}
+	fmt.Println("!!!END Enable pairing (should be enabled)\n")
+
+/*
+
 	pairingTimeout := byte(60)
 	fmt.Printf("Enable pairing for %d seconds\n", pairingTimeout)
 	req = &HidPPMsg{
@@ -801,8 +395,9 @@ GetDevInfo:
 		Parameters: []byte{byte(UNIFYING_DONGLE_HIDPP_REGISTER_PAIRING), 0x01, 0x04, pairingTimeout}, //param1: lock open, param2: device index (the unused one which will be announced ??), param3: timeout
 	}
 	u.SendUSBReport(req)
-
-	//PairingLoop:
+*/
+	//Parse successive input reports in endless loop
+	fmt.Println("!!!!Parse successive input reports in endless loop...")
 	for {
 		rspUSB, err := u.ReceiveUSBReport(500)
 		if err == nil {
@@ -810,6 +405,7 @@ GetDevInfo:
 		}
 	}
 
+	/*
 	go func() {
 		for {
 			fmt.Println(u.ReceiveUSBReport(0))
@@ -827,5 +423,5 @@ GetDevInfo:
 		os.Exit(0)
 		return
 	}
-
+	*/
 }
