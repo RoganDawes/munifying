@@ -216,8 +216,80 @@ func (r *DJReport) IsDJ() bool {
 	return r.ReportID == USB_REPORT_TYPE_DJ_LONG || r.ReportID == USB_REPORT_TYPE_DJ_SHORT
 }
 
-func (r *DJReport) String() string {
-	return fmt.Sprintf("USB Report type: %s, DeviceID: %#02x, DJ Type: %s, Params: % #x", r.ReportID, r.DeviceID, r.Type, r.Parameters)
+func (r *DJReport) String() (res string) {
+	res = fmt.Sprintf("USB Report type: %s, DeviceID: %#02x, DJ Type: %s, Params: % #x", r.ReportID, r.DeviceID, r.Type, r.Parameters)
+
+	switch r.Type {
+	case UNIFYING_DJ_REPORT_TYPE_NOTIFICATION_DEVICE_PAIRED:
+		specialFunc := r.Parameters[0]
+		sfMoreNotif := specialFunc & 0x01 > 0
+		sfOtherFieldsNotRelevant := specialFunc & 0x02 > 0
+
+		wpid := uint16(r.Parameters[2]) << 8 + uint16(r.Parameters[1])
+
+		reportTypeBitField := uint32(r.Parameters[3]) << 24 + uint32(r.Parameters[4]) << 16 + uint32(r.Parameters[5]) << 8 + uint32(r.Parameters[6])
+
+		bKeyboard := reportTypeBitField & UNIFYING_DJ_REPORT_RF_TYPE_BITFIELD_KEYBOARD > 0
+		bMouse := reportTypeBitField & UNIFYING_DJ_REPORT_RF_TYPE_BITFIELD_MOUSE > 0
+		bConCtl := reportTypeBitField & UNIFYING_DJ_REPORT_RF_TYPE_BITFIELD_CONSUMER_CONTROL > 0
+		bSysCtl := reportTypeBitField & UNIFYING_DJ_REPORT_RF_TYPE_BITFIELD_POWER_KEYS > 0
+		bMedCtr := reportTypeBitField & UNIFYING_DJ_REPORT_RF_TYPE_BITFIELD_MEDIA_CENTER > 0
+		bLED := reportTypeBitField & UNIFYING_DJ_REPORT_RF_TYPE_BITFIELD_KEYBOARD_LEDS > 0
+		bHIDppShort := reportTypeBitField & UNIFYING_DJ_REPORT_RF_TYPE_BITFIELD_HIDPP_SHORT > 0
+		bHIDppLong := reportTypeBitField & UNIFYING_DJ_REPORT_RF_TYPE_BITFIELD_HIDPP_LONG > 0
+
+		res += fmt.Sprintf("\n\tSpecial func: %#02x (more Notifications: %v other fields not relevant: %v)", specialFunc, sfMoreNotif, sfOtherFieldsNotRelevant)
+		res += fmt.Sprintf("\n\twpid: %#04x", wpid)
+		res += fmt.Sprintf("\n\treport bitfield: %#08x", reportTypeBitField)
+		res += fmt.Sprintf("\n\t\tbitfield keyboard: %v", bKeyboard)
+		res += fmt.Sprintf("\n\t\tbitfield mouse: %v", bMouse)
+		res += fmt.Sprintf("\n\t\tbitfield consumer control: %v", bConCtl)
+		res += fmt.Sprintf("\n\t\tbitfield system control: %v", bSysCtl)
+		res += fmt.Sprintf("\n\t\tbitfield media center: %v", bMedCtr)
+		res += fmt.Sprintf("\n\t\tbitfield LED: %v", bLED)
+		res += fmt.Sprintf("\n\t\tbitfield HID++ short: %v", bHIDppShort)
+		res += fmt.Sprintf("\n\t\tbitfield HID++ long: %v", bHIDppLong)
+
+	/*
+	case UNIFYING_HIDPP_MSG_ID_SET_LONG_REGISTER_RSP:
+		fallthrough
+	case UNIFYING_HIDPP_MSG_ID_GET_LONG_REGISTER_RSP:
+		fallthrough
+	case UNIFYING_HIDPP_MSG_ID_SET_REGISTER_RSP:
+		res += fmt.Sprintf("\n\tRegister address: %s", HidPPRegister(r.Parameters[0]))
+		res += fmt.Sprintf("\n\tValue: % #x", r.Parameters[1:])
+	case UNIFYING_HIDPP_MSG_ID_DEVICE_DISCONNECTION:
+		res += fmt.Sprintf("\n\tDevice disconnected: %v", r.Parameters[0] == 0x02)
+	case UNIFYING_HIDPP_MSG_ID_DEVICE_CONNECTION:
+		res += fmt.Sprintf("\n\tProtocol type: %#02x", r.Parameters[0])
+		res += fmt.Sprintf("\n\tDevice type: %#02x", r.Parameters[1] & 0x0F)
+		res += fmt.Sprintf("\n\tSoftware present: %v", r.Parameters[1] & 0x10 > 0)
+		res += fmt.Sprintf("\n\tLink encrypted: %v", r.Parameters[1] & 0x20 > 0)
+		res += fmt.Sprintf("\n\tLink established: %v", r.Parameters[1] & 0x40 == 0)
+		res += fmt.Sprintf("\n\tConnection with payload: %v", r.Parameters[1] & 0x80 > 0)
+		res += fmt.Sprintf("\n\tWireless PID: 0x%02x%02x", r.Parameters[3], r.Parameters[2])
+	case UNIFYING_HIDPP_MSG_ID_RECEIVER_LOCKING_INFORMATION:
+		res += fmt.Sprintf("\n\tLock open: %v", r.Parameters[0] == 0x01)
+		lock_err := "undefined / reserved"
+		switch r.Parameters[1] {
+		case 0x00:
+			lock_err = "no error"
+		case 0x01:
+			lock_err = "timeout"
+		case 0x02:
+			lock_err = "unsupported device"
+		case 0x03:
+			lock_err = "too many devices"
+		case 0x06:
+			lock_err = "connection sequence timeout"
+		}
+		res += fmt.Sprintf("\n\tLock error: %s", lock_err)
+	case UNIFYING_HIDPP_MSG_ID_ERROR_MSG:
+		res += fmt.Sprintf("\n\tError notification with parameters: % #x", r.Parameters)
+	*/
+	}
+	return res
+
 }
 
 func (r *DJReport) IsRFReport() bool {

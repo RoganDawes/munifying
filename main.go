@@ -8,6 +8,39 @@ import (
 	"time"
 )
 
+type UnifyingDeviceType byte
+const (
+	UNIFYING_DEVICE_TYPE_UNKNOWN UnifyingDeviceType = 0x00
+	UNIFYING_DEVICE_TYPE_KEYBOARD UnifyingDeviceType = 0x01
+	UNIFYING_DEVICE_TYPE_MOUSE UnifyingDeviceType = 0x02
+	UNIFYING_DEVICE_TYPE_NUMPAD UnifyingDeviceType = 0x03
+	UNIFYING_DEVICE_TYPE_PRESENTER UnifyingDeviceType = 0x04
+	UNIFYING_DEVICE_TYPE_TRACKBALL UnifyingDeviceType = 0x08
+	UNIFYING_DEVICE_TYPE_TOUCHPAD UnifyingDeviceType = 0x09
+)
+func (t UnifyingDeviceType) String() string {
+	switch t {
+	case UNIFYING_DEVICE_TYPE_KEYBOARD:
+		return "KEYBOARD"
+	case UNIFYING_DEVICE_TYPE_MOUSE:
+		return "MOUSE"
+	case UNIFYING_DEVICE_TYPE_NUMPAD:
+		return "NUMPAD"
+	case UNIFYING_DEVICE_TYPE_PRESENTER:
+		return "PRESENTER"
+	case UNIFYING_DEVICE_TYPE_TRACKBALL:
+		return "TRACKBALL"
+	case UNIFYING_DEVICE_TYPE_TOUCHPAD:
+		return "TOUCHPAD"
+	case UNIFYING_DEVICE_TYPE_UNKNOWN:
+		return "UNKNOWN"
+	default:
+		return fmt.Sprintf("UNDEFINED DEVICE TYPE %02x", t)
+	}
+
+}
+
+
 type Unifying struct {
 	UsbCtx     *gousb.Context
 	Dev        *gousb.Device
@@ -44,7 +77,7 @@ func (u *Unifying) ReceiveUSBReport(timeoutMillis int) (msg USBReport, err error
 	return
 }
 
-func (u *Unifying) readLoop() {
+func (u *Unifying) rcvLoop() {
 	buf := make([]byte, 32)
 
 	for {
@@ -80,36 +113,12 @@ func (u *Unifying) readLoop() {
 		default:
 			fmt.Printf("Unknown USB input report: % x\n", buf[:n])
 		}
-
-		/*
-					if pay[0] == 0x20 || pay[0] == 0x21 {
-
-						fmt.Println("DJ message")
-
-						if pay[0] == 0x20 {
-							fmt.Printf("\tDJ short message: % #x\n", pay)
-						} else if pay[0] == 0x21 {
-							fmt.Printf("\tDJ long message: % #x\n", pay)
-						}
-
-						fmt.Printf("\tDJ message device index: %#02x\n", pay[1])
-
-						if pay[2] < 0x40 {
-							fmt.Println("\tRF report")
-						} else if pay[1] < 0x80 {
-							fmt.Println("\tDJ notification")
-						} else {
-							fmt.Println("\tDJ command")
-						}
-					}
-				}
-		*/
 	}
 
 	close(u.rcvQueue)
 }
 
-func (u *Unifying) sndRcvLoop() {
+func (u *Unifying) sndLoop() {
 Outer:
 	for {
 		select {
@@ -129,10 +138,6 @@ Outer:
 				2,                         //Index 0x02
 				outdata,                   //payload
 			)
-			/*
-			case indata := <- u.rcvQueue:
-				fmt.Printf("In: % #x\n", indata)
-			*/
 		}
 	}
 
@@ -228,8 +233,8 @@ Outer:
 
 	res.ctx, res.cancel = context.WithCancel(context.Background())
 
-	go res.readLoop()
-	go res.sndRcvLoop()
+	go res.rcvLoop()
+	go res.sndLoop()
 
 	return
 }
@@ -291,6 +296,66 @@ func (u *Unifying) HIDPP_SendAndCollectResponses(deviceID byte, id HidPPMsgSubID
 
 }
 
+func (u *Unifying) EnablePairing(timeOutSeconds byte, devNumber byte, blockTillOff bool) (err error){
+	//Enable pairing
+	connectDevices := byte(0x01) //open lock
+	deviceNumber := devNumber //According to specs: Same value as device index transmitted in 0x41 notification, but we haven't tx'ed anything
+	openLockTimeout := timeOutSeconds
+	fmt.Printf("Enable pairing for %d seconds\n", openLockTimeout)
+	responses,err := u.HIDPP_SendAndCollectResponses(0xff, UNIFYING_HIDPP_MSG_ID_SET_REGISTER_REQ, []byte{byte(UNIFYING_DONGLE_HIDPP_REGISTER_PAIRING), connectDevices, deviceNumber, openLockTimeout})
+	for _,r := range responses {
+		fmt.Println(r.String())
+	}
+	fmt.Println("... Enable pairing response (should be enabled)\n")
+
+	if !blockTillOff {
+		return
+	}
+
+	//Parse successive input reports till new "receiver lock information" with lock closed occurs
+	fmt.Println("Printing follow up reports ...")
+	for {
+		rspUSB, err := u.ReceiveUSBReport(500)
+		if err == nil {
+
+			fmt.Println(rspUSB.String())
+			if rspUSB.IsHIDPP() {
+				hidppRsp := rspUSB.(*HidPPMsg)
+				if hidppRsp.MsgSubID == UNIFYING_HIDPP_MSG_ID_RECEIVER_LOCKING_INFORMATION && (hidppRsp.Parameters[0] & 0x01) == 0 {
+					switch hidppRsp.Parameters[1] {
+					case 0x00:
+						return nil //"no error"
+					case 0x01:
+						return errors.New("timeout")
+					case 0x02:
+						return errors.New("unsupported device")
+					case 0x03:
+						return errors.New("too many devices")
+					case 0x06:
+						return errors.New("connection sequence timeout")
+					default:
+						return errors.New("pairing aborted with unknown reason")
+					}
+
+
+					fmt.Println("Pairing lock closed")
+					return err
+				}
+
+				// device connection
+				if hidppRsp.MsgSubID == UNIFYING_HIDPP_MSG_ID_DEVICE_CONNECTION {
+					devIdx := hidppRsp.DeviceID
+					wpid := uint16(hidppRsp.Parameters[3]) << 8 + uint16(hidppRsp.Parameters[2])
+					fmt.Printf("DEVICE CONNECTION ON INDEX: %02x TYPE: %s WPID: %#04x\n", devIdx, UnifyingDeviceType(hidppRsp.Parameters[1] & 0x0F), wpid)
+
+					//request additional information
+				}
+			}
+
+		}
+	}
+
+}
 
 func main() {
 	u, err := NewUnifying()
@@ -367,35 +432,12 @@ func main() {
 	}
 	fmt.Println("!!!END get connected device info\n")
 
-	/*
-		> 10ff80b201123c // enable pairing (p0: 0x01 - Open Lock, p1: 0x12 - Device Number ??, p2: 0x3c == 60 sec) //timeout of 0 would be default of 30sec
-		< 10ff4a01000000 //Notif Lock open (pairing on)
-		< 10ff80b2000000 //SetRegResp for enable pairing
-	*/
 
-	//Enable pairing
-	connectDevices := byte(0x01) //open lock
 	deviceNumber := byte(0x01) //According to specs: Same value as device index transmitted in 0x41 notification, but we haven't tx'ed anything
 	openLockTimeout := byte(60)
-	fmt.Printf("!!!Enable pairing for %d seconds\n", openLockTimeout)
-	responses,err = u.HIDPP_SendAndCollectResponses(0xff, UNIFYING_HIDPP_MSG_ID_SET_REGISTER_REQ, []byte{byte(UNIFYING_DONGLE_HIDPP_REGISTER_PAIRING), connectDevices, deviceNumber, openLockTimeout})
-	for _,r := range responses {
-		fmt.Println(r.String())
-	}
-	fmt.Println("!!!END Enable pairing (should be enabled)\n")
+	pe := u.EnablePairing(openLockTimeout, deviceNumber,true)
+	fmt.Printf("Pairing mode exited: %v\n", pe)
 
-/*
-
-	pairingTimeout := byte(60)
-	fmt.Printf("Enable pairing for %d seconds\n", pairingTimeout)
-	req = &HidPPMsg{
-		ReportID:   USB_REPORT_TYPE_HIDPP_SHORT,
-		DeviceID:   0xff,
-		MsgSubID:   UNIFYING_HIDPP_MSG_ID_SET_REGISTER_REQ,
-		Parameters: []byte{byte(UNIFYING_DONGLE_HIDPP_REGISTER_PAIRING), 0x01, 0x04, pairingTimeout}, //param1: lock open, param2: device index (the unused one which will be announced ??), param3: timeout
-	}
-	u.SendUSBReport(req)
-*/
 	//Parse successive input reports in endless loop
 	fmt.Println("!!!!Parse successive input reports in endless loop...")
 	for {
@@ -405,23 +447,4 @@ func main() {
 		}
 	}
 
-	/*
-	go func() {
-		for {
-			fmt.Println(u.ReceiveUSBReport(0))
-		}
-
-	}()
-
-	//Catch signal
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt)
-	for sig := range c {
-		// sig is a ^C, handle it
-		fmt.Println("Received signal", sig)
-		u.Close()
-		os.Exit(0)
-		return
-	}
-	*/
 }
