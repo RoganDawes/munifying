@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/google/gousb"
+	"log"
 	"time"
 )
 
@@ -15,6 +16,8 @@ var (
 const (
 	VID gousb.ID = 0x046d
 	PID gousb.ID = 0xc52b //cu0007, cu0008, cu0012
+	PID_CU0016 gousb.ID = 0xc540 //cu0016
+	PID_RR0011 gousb.ID = 0xc53e //R-R0011
 )
 
 
@@ -665,8 +668,17 @@ func NewLocalUSBDongle() (res *LocalUSBDongle, err error) {
 	res.UsbCtx = gousb.NewContext()
 	res.Dev, err = res.UsbCtx.OpenDeviceWithVIDPID(VID, PID)
 	if err != nil || res.Dev == nil {
-		res.Close()
-		return nil, eNoDongle
+
+		log.Println("No Unifying dongle found, try to find dongle for R500 presentation clicker")
+
+		// try R500 dongle CU0016
+		res.Dev, err = res.UsbCtx.OpenDeviceWithVIDPID(VID, PID_CU0016)
+		if err != nil || res.Dev == nil {
+			res.Close()
+			log.Println("No valid Unifying or presentation clicker dongle found")
+			return nil, eNoDongle
+		}
+		log.Println("Found CU0016 for R500 presentation clicker")
 	}
 	fmt.Println("LocalUSBDongle dongle found", res.Dev)
 

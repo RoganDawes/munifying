@@ -9,7 +9,8 @@ import (
 
 
 func main() {
-	enterPairing := false
+	enterPairing := true
+	unpairAll := false
 
 	usb, err := unifying.NewLocalUSBDongle()
 	if err != nil {
@@ -28,6 +29,12 @@ func main() {
 	}
 
 	//usb.PrintInfoForAllConnectedDevices()
+
+	if unpairAll {
+		for i:=byte(1);i<7;i++ {
+			usb.Unpair(i)
+		}
+	}
 
 	//Pair new device
 	if enterPairing {
@@ -173,12 +180,6 @@ func main() {
 
 	//return
 	//End test
-
-	/*
-		for i:=byte(1);i<7;i++ {
-			usb.Unpair(i)
-		}
-	*/
 
 	//Parse successive input reports in endless loop
 	fmt.Println("!!!!Parse successive input reports in endless loop...")

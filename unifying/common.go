@@ -17,8 +17,12 @@ const (
 	DEVICE_TYPE_MOUSE     DeviceType = 0x02
 	DEVICE_TYPE_NUMPAD    DeviceType = 0x03
 	DEVICE_TYPE_PRESENTER DeviceType = 0x04
+	DEVICE_TYPE_REMOTE    DeviceType = 0x07
 	DEVICE_TYPE_TRACKBALL DeviceType = 0x08
 	DEVICE_TYPE_TOUCHPAD  DeviceType = 0x09
+	DEVICE_TYPE_TABLET  DeviceType = 0x0a
+	DEVICE_TYPE_GAMEPAD  DeviceType = 0x0b
+	DEVICE_TYPE_JOYSTICK  DeviceType = 0x0c
 )
 
 func (t DeviceType) String() string {
@@ -31,10 +35,18 @@ func (t DeviceType) String() string {
 		return "NUMPAD"
 	case DEVICE_TYPE_PRESENTER:
 		return "PRESENTER"
+	case DEVICE_TYPE_REMOTE:
+		return "REMOTE"
 	case DEVICE_TYPE_TRACKBALL:
 		return "TRACKBALL"
 	case DEVICE_TYPE_TOUCHPAD:
 		return "TOUCHPAD"
+	case DEVICE_TYPE_TABLET:
+		return "TABLET"
+	case DEVICE_TYPE_GAMEPAD:
+		return "GAMEPAD"
+	case DEVICE_TYPE_JOYSTICK:
+		return "JOYSTICK"
 	case DEVICE_TYPE_UNKNOWN:
 		return "UNKNOWN"
 	default:
@@ -145,18 +157,17 @@ func (rt *ReportTypes) FromSlice(sl []byte) (err error) {
 	return nil
 }
 
-
 type DongleInfo struct {
-	NumConnectedDevices   byte
-	WPID                  []byte
-	FwMajor               byte
-	FwMinor               byte
-	FwBuild               uint16
-	LikelyProto           byte
-	BootloaderMajor		  byte
-	BootloaderMinor		  byte
+	NumConnectedDevices byte
+	WPID                []byte
+	FwMajor             byte
+	FwMinor             byte
+	FwBuild             uint16
+	LikelyProto         byte
+	BootloaderMajor     byte
+	BootloaderMinor     byte
 
-	Serial                []byte
+	Serial []byte
 }
 
 func (di *DongleInfo) String() string {
@@ -168,7 +179,6 @@ func (di *DongleInfo) String() string {
 	res += fmt.Sprintf("\t(likely) protocol:           %#02x\n", di.LikelyProto)
 	res += fmt.Sprintf("\tSerial:                      %02x:%02x:%02x:%02x\n", di.Serial[0], di.Serial[1], di.Serial[2], di.Serial[3])
 	res += fmt.Sprintf("\tConnected devices:           %d\n", di.NumConnectedDevices)
-
 
 	return res
 }
@@ -189,7 +199,6 @@ type DeviceInfo struct {
 	Name string
 }
 
-
 func (di *DeviceInfo) String() string {
 	res := fmt.Sprintf("Device Info for device index index %d\n", di.DeviceIndex)
 	res += fmt.Sprintf("-------------------------------------\n")
@@ -205,19 +214,17 @@ func (di *DeviceInfo) String() string {
 	res += fmt.Sprintf("\tKeyData:                     % 02x\n", di.RawKeyData)
 
 	if len(di.Key) > 0 {
-		//res += fmt.Sprintf("\tKey:                         % 02x\n", di.Key)
-		res += fmt.Sprintf("\tKey:                         % 02x **REDACTED**\n", di.Key[:3])
+		res += fmt.Sprintf("\tKey:                         %02x\n", di.Key)
+		//res += fmt.Sprintf("\tKey:                         % 02x **REDACTED**\n", di.Key[:3])
 	} else {
 		res += fmt.Sprintf("\tKey:                         none (no link encryption in use)\n")
 	}
-
-
 
 	return res
 }
 
 type SetInfo struct {
-	Dongle DongleInfo
+	Dongle           DongleInfo
 	ConnectedDevices []DeviceInfo
 }
 
@@ -230,14 +237,14 @@ func (si *SetInfo) AddDevice(d DeviceInfo) {
 
 func (si *SetInfo) String() (res string) {
 	res = si.Dongle.String()
-	for _,d := range si.ConnectedDevices {
+	for _, d := range si.ConnectedDevices {
 		res += fmt.Sprintln()
 		res += d.String()
 	}
 	return
 }
 
-func (si *SetInfo) StoreAutoname() (err error){
+func (si *SetInfo) StoreAutoname() (err error) {
 	filename := fmt.Sprintf("dongle_%02x_%02x_%02x_%02x.dat", si.Dongle.Serial[0], si.Dongle.Serial[1], si.Dongle.Serial[2], si.Dongle.Serial[3])
 	err = si.Store(filename)
 	if err == nil {
@@ -246,8 +253,8 @@ func (si *SetInfo) StoreAutoname() (err error){
 	return
 }
 
-func (si SetInfo) Store(filename string) (err error){
-	j,eJ := json.Marshal(si)
+func (si SetInfo) Store(filename string) (err error) {
+	j, eJ := json.Marshal(si)
 	if eJ != nil {
 		err = eJ
 		return
@@ -257,4 +264,3 @@ func (si SetInfo) Store(filename string) (err error){
 
 	return
 }
-
