@@ -41,19 +41,19 @@ func SelectPaired(usb *unifying.LocalUSBDongle) (devInfo unifying.DeviceInfo, er
 		return devInfo, errors.New("no device paired to receiver")
 	}
 
-	devToUse := si.ConnectedDevices[0]
+	//devToUse := si.ConnectedDevices[0]
 
-	if si.Dongle.NumConnectedDevices > 1 {
-		fmt.Println("Multiple devices connected to target dongle, select device to use...")
+	//if si.Dongle.NumConnectedDevices > 1 {
+		fmt.Println("Devices connected to target dongle, select device to unpair...")
 
 		options := make([]string, si.Dongle.NumConnectedDevices)
 		for i, d := range si.ConnectedDevices {
-			options[i] = fmt.Sprintf("%02x:%02x:%02x:%02x:%02x %s '%s')", d.RFAddr[0], d.RFAddr[1], d.RFAddr[2], d.RFAddr[3], d.RFAddr[4], d.DeviceType.String(), d.Name)
+			options[i] = fmt.Sprintf("%02x:%02x:%02x:%02x:%02x %s '%s'", d.RFAddr[0], d.RFAddr[1], d.RFAddr[2], d.RFAddr[3], d.RFAddr[4], d.DeviceType.String(), d.Name)
 		}
 
 		var selected int
 		for {
-			s, eS := helper.Select("choose device to sniff: ", options)
+			s, eS := helper.Select("choose device to unpair: ", options)
 			if eS != nil {
 				fmt.Println(eS)
 			} else {
@@ -62,9 +62,9 @@ func SelectPaired(usb *unifying.LocalUSBDongle) (devInfo unifying.DeviceInfo, er
 			}
 		}
 
-		devToUse = si.ConnectedDevices[selected]
+		devToUse := si.ConnectedDevices[selected]
 
-	}
+	//}
 
 	return devToUse, nil
 }
@@ -83,7 +83,7 @@ var unpairCmd = &cobra.Command{
 
 		di,err := SelectPaired(usb)
 		if err == nil {
-			fmt.Printf("Remove device number %d '%s' from paired devices", di.DeviceIndex, di.Name)
+			fmt.Printf("Remove device index %d '%s' from paired devices\n", di.DeviceIndex, di.Name)
 			usb.Unpair(di.DeviceIndex+1)
 		}
 	},

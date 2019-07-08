@@ -10,16 +10,16 @@ import (
 )
 
 var (
-	eNoDongle        = errors.New("No Logitech Receiver dongle found")
+	eNoDongle = errors.New("No Logitech Receiver dongle found")
 )
 
 const (
-	VID          gousb.ID = 0x046d
-	PID_UNIFYING gousb.ID = 0xc52b //cu0007, cu0008, cu0012
-	PID_CU0016   gousb.ID = 0xc540 //cu0016
-	PID_RR0011   gousb.ID = 0xc53e //R-R0011
+	VID                  gousb.ID = 0x046d
+	PID_UNIFYING         gousb.ID = 0xc52b //cu0007, cu0008, cu0012
+	PID_CU0016_R500      gousb.ID = 0xc540 //cu0016
+	PID_CU0016_SPOTLIGHT gousb.ID = 0xc53e //R-R0011
+	PID_CU0014_R400      gousb.ID = 0xc538 //R-R0011
 )
-
 
 type LocalUSBDongle struct {
 	UsbCtx     *gousb.Context
@@ -33,7 +33,7 @@ type LocalUSBDongle struct {
 	cancel   context.CancelFunc
 	ctx      context.Context
 
-	showInOut                  bool
+	showInOut bool
 }
 
 func (u *LocalUSBDongle) SendUSBReport(msg USBReport) (err error) {
@@ -160,7 +160,6 @@ func (u *LocalUSBDongle) Close() {
 	}
 }
 
-
 func (u *LocalUSBDongle) HIDPP_SendAndCollectResponses(deviceID byte, id HidPPMsgSubID, parameters []byte) (responseReports []USBReport, err error) {
 	params := make([]byte, USB_REPORT_TYPE_HIDPP_SHORT_PAYLOAD_LEN)
 	reportType := USB_REPORT_TYPE_HIDPP_SHORT
@@ -245,11 +244,11 @@ func (u *LocalUSBDongle) EnablePairing(timeOutSeconds byte, devNumber byte, bloc
 	openLockTimeout := timeOutSeconds
 	fmt.Printf("Enable pairing for %d seconds\n", openLockTimeout)
 
-/*
-	if !blockTillOff {
-		return u.HIDPP_Send(0xff, HIDPP_MSG_ID_SET_REGISTER_REQ, []byte{byte(DONGLE_HIDPP_REGISTER_PAIRING), connectDevices, deviceNumber, openLockTimeout})
-	}
-*/
+	/*
+		if !blockTillOff {
+			return u.HIDPP_Send(0xff, HIDPP_MSG_ID_SET_REGISTER_REQ, []byte{byte(DONGLE_HIDPP_REGISTER_PAIRING), connectDevices, deviceNumber, openLockTimeout})
+		}
+	*/
 	responses, err := u.HIDPP_SendAndCollectResponses(0xff, HIDPP_MSG_ID_SET_REGISTER_REQ, []byte{byte(DONGLE_HIDPP_REGISTER_PAIRING), connectDevices, deviceNumber, openLockTimeout})
 	for _, r := range responses {
 		fmt.Println(r.String())
@@ -263,7 +262,6 @@ func (u *LocalUSBDongle) EnablePairing(timeOutSeconds byte, devNumber byte, bloc
 	if !blockTillOff {
 		return nil
 	}
-
 
 	//Parse successive input reports till new "receiver lock information" with lock closed occurs
 	fmt.Println("Printing follow up reports ...")
@@ -313,7 +311,7 @@ func (u *LocalUSBDongle) DisablePairing() (err error) {
 	//Enable pairing
 	connectDevices := byte(0x02) //close lock
 
-	_,err = u.HIDPP_SendAndCollectResponses(0xff, HIDPP_MSG_ID_SET_REGISTER_REQ, []byte{byte(DONGLE_HIDPP_REGISTER_PAIRING), connectDevices, 0, 0})
+	_, err = u.HIDPP_SendAndCollectResponses(0xff, HIDPP_MSG_ID_SET_REGISTER_REQ, []byte{byte(DONGLE_HIDPP_REGISTER_PAIRING), connectDevices, 0, 0})
 	return err
 }
 
@@ -378,8 +376,6 @@ func (u *LocalUSBDongle) GetDeviceActivityCounters() (activityCounters []byte, e
 	activityCounters = devActivityResp.Parameters[1:7]
 	return
 }
-
-
 
 func (u *LocalUSBDongle) GetDevicePairingInfo(deviceID byte) (res DeviceInfo, err error) {
 	if deviceID < 0 || deviceID > 6 {
@@ -463,14 +459,13 @@ func (u *LocalUSBDongle) GetDevicePairingInfo(deviceID byte) (res DeviceInfo, er
 	}
 	res.Name = string(devName.Parameters[3 : 3+devName.Parameters[2]])
 
-	res.RawKeyData,_ = u.DumpRawKeyData(deviceID) //we ingnore errors, seems only to apply to dongles with WPID 0x8808 (not 0x8802)
+	res.RawKeyData, _ = u.DumpRawKeyData(deviceID) //we ingnore errors, seems only to apply to dongles with WPID 0x8808 (not 0x8802)
 	//fmt.Printf("Rawkey: % 02x\n", res.RawKeyData)
 	if len(res.RawKeyData) > 0 {
-		res.Key,_ = KeyData2Key(res.RawKeyData) //Ignore errors
+		res.Key, _ = KeyData2Key(res.RawKeyData) //Ignore errors
 	}
 
-
-	res.RFAddr = make([]byte,5)
+	res.RFAddr = make([]byte, 5)
 
 	return
 }
@@ -501,14 +496,14 @@ func (u *LocalUSBDongle) GetAllConnectedDevices() (devices []DeviceInfo, err err
 	if err != nil {
 		return
 	}
-	devices = make([]DeviceInfo,0)
+	devices = make([]DeviceInfo, 0)
 
-	for devIdx := byte(0); devIdx < numPaired; devIdx++ {
+	for devIdx := byte(0); devIdx < 8 && numPaired > 0; devIdx++ {
 		pi, ePi := u.GetDevicePairingInfo(devIdx)
 		if ePi == nil {
 			//fmt.Println(pi.String())
 			devices = append(devices, pi)
-
+			numPaired--
 		} else {
 			fmt.Printf("Error for device index %d: %v\n", devIdx, ePi)
 		}
@@ -516,7 +511,6 @@ func (u *LocalUSBDongle) GetAllConnectedDevices() (devices []DeviceInfo, err err
 	}
 	return
 }
-
 
 func (u *LocalUSBDongle) GetDongleInfo() (res DongleInfo, err error) {
 	//fmt.Printf("GetDevicePairingInfo devIdx %d, infoType %02x\n", deviceID, infoType)
@@ -578,7 +572,6 @@ func (u *LocalUSBDongle) GetDongleInfo() (res DongleInfo, err error) {
 		}
 	}
 
-
 	//Bootloader version
 
 	return
@@ -591,17 +584,16 @@ func (u *LocalUSBDongle) GetSetInfo() (set SetInfo, err error) {
 		set = SetInfo{
 			Dongle: di,
 		}
-		devs,eDevs := u.GetAllConnectedDevices()
+		devs, eDevs := u.GetAllConnectedDevices()
 		if eDevs == nil {
-			for _,d := range devs {
+			for _, d := range devs {
 				set.AddDevice(d)
 			}
 		}
 
-
 		set.Dongle.NumConnectedDevices = byte(len(set.ConnectedDevices))
 	} else {
-		return set,eDi
+		return set, eDi
 	}
 	return
 }
@@ -640,9 +632,8 @@ func (u *LocalUSBDongle) DumpFlashByte(addr uint16) (res byte, err error) {
 	// 31ffffff 0d63a9c2 1a400000 02000000 00000000
 	// 41ffffff 044b3336 30000000 00000000 00000000
 
-	addrMSB := byte (addr >> 8)
+	addrMSB := byte(addr >> 8)
 	addrLSB := byte(addr & 0xff)
-
 
 	responses, _ := u.HIDPP_SendAndCollectResponses(0xff, HIDPP_MSG_ID_GET_REGISTER_REQ, []byte{byte(DONGLE_HIDPP_REGISTER_SECRET_MEMDUMP), addrLSB, addrMSB})
 	for _, r := range responses {
@@ -658,14 +649,13 @@ func (u *LocalUSBDongle) DumpFlashByte(addr uint16) (res byte, err error) {
 	return
 }
 
-
 func (u *LocalUSBDongle) DumpRawKeyData(devID byte) (res []byte, err error) {
 	//find flash page with device data
 	flashPagesToConsider := []uint16{0xe400, 0xe800, 0xec00}
 
 	activePageAddr := uint16(0)
-	for _,pageAddr := range flashPagesToConsider {
-		dB,eDb := u.DumpFlashByte(pageAddr)
+	for _, pageAddr := range flashPagesToConsider {
+		dB, eDb := u.DumpFlashByte(pageAddr)
 		if eDb == nil && dB == 0x3f {
 			activePageAddr = pageAddr
 			break
@@ -682,8 +672,8 @@ func (u *LocalUSBDongle) DumpRawKeyData(devID byte) (res []byte, err error) {
 	stepsize := 0x14
 	maxSteps := 3 + 5*6 //3 entries for dongle, max 5 entries per device
 	for step := 0; step < maxSteps; step++ {
-		checkAddress := activePageAddr + uint16(stepsize * step)
-		dB,eDb := u.DumpFlashByte(checkAddress)
+		checkAddress := activePageAddr + uint16(stepsize*step)
+		dB, eDb := u.DumpFlashByte(checkAddress)
 		if eDb == nil && dB == marker {
 			keyAddr = checkAddress
 			break
@@ -695,8 +685,8 @@ func (u *LocalUSBDongle) DumpRawKeyData(devID byte) (res []byte, err error) {
 	}
 	keyAddr += 4
 	res = make([]byte, 16)
-	for idx,_ := range  res {
-		res[idx],_ = u.DumpFlashByte(keyAddr + uint16(idx))
+	for idx, _ := range res {
+		res[idx], _ = u.DumpFlashByte(keyAddr + uint16(idx))
 	}
 	return
 
@@ -708,30 +698,14 @@ func NewLocalUSBDongle() (res *LocalUSBDongle, err error) {
 
 	res.UsbCtx = gousb.NewContext()
 
-	/*
-	res.Dev, err = res.UsbCtx.OpenDeviceWithVIDPID(VID, PID_UNIFYING)
-	if err != nil || res.Dev == nil {
-
-		log.Println("No Unifying dongle found, try to find dongle for R500 presentation clicker")
-
-		// try R500 dongle CU0016
-		res.Dev, err = res.UsbCtx.OpenDeviceWithVIDPID(VID, PID_RR0011)
-		if err != nil || res.Dev == nil {
-			res.Close()
-			log.Println("No valid Unifying or presentation clicker dongle found")
-			return nil, eNoDongle
-		}
-		log.Println("Found RR0011 for SPOTLIGHT presentation clicker")
-	}
-	fmt.Println("LocalUSBDongle dongle found", res.Dev)
-	*/
-
 	if res.Dev, err = res.UsbCtx.OpenDeviceWithVIDPID(VID, PID_UNIFYING); err == nil && res.Dev != nil {
 		fmt.Println("Logitech Unifying dongle found")
-	} else if res.Dev, err = res.UsbCtx.OpenDeviceWithVIDPID(VID, PID_RR0011); err == nil && res.Dev != nil {
+	} else if res.Dev, err = res.UsbCtx.OpenDeviceWithVIDPID(VID, PID_CU0016_SPOTLIGHT); err == nil && res.Dev != nil {
 		fmt.Println("Found CU0016 Dongle for Logitech SPOTLIGHT presentation clicker")
-	} else if res.Dev, err = res.UsbCtx.OpenDeviceWithVIDPID(VID, PID_CU0016); err == nil && res.Dev != nil {
+	} else if res.Dev, err = res.UsbCtx.OpenDeviceWithVIDPID(VID, PID_CU0016_R500); err == nil && res.Dev != nil {
 		fmt.Println("Found CU0016 Dongle for R500 presentation clicker")
+	} else if res.Dev, err = res.UsbCtx.OpenDeviceWithVIDPID(VID, PID_CU0014_R400); err == nil && res.Dev != nil {
+		fmt.Println("Found CU0010 Dongle for M171 mouse")
 	} else {
 		res.Close()
 		log.Fatal("No known dongle found")

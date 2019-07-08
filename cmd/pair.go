@@ -79,7 +79,7 @@ var pairCmd = &cobra.Command{
 					if hidppRsp.MsgSubID == unifying.HIDPP_MSG_ID_RECEIVER_LOCKING_INFORMATION && (hidppRsp.Parameters[0]&0x01) == 0 {
 						switch hidppRsp.Parameters[1] {
 						case 0x00:
-							fmt.Println("Device paired successfully") //"no error"
+							fmt.Println("no error") //"no error"
 						case 0x01:
 							fmt.Println("timeout")
 						case 0x02:
