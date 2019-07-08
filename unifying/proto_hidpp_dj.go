@@ -91,6 +91,8 @@ func (t HidPPMsgSubID) String() string {
 		return "SET REGISTER LONG"
 	case HIDPP_MSG_ID_GET_LONG_REGISTER_REQ: //Same for response
 		return "GET REGISTER LONG"
+	case HIDPP_MSG_ID_ERROR_MSG: //Same for response
+		return "ERROR MESSAGE"
 
 	}
 	return fmt.Sprintf("Unknown HID++ SubID %02x", byte(t))

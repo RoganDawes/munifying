@@ -106,6 +106,36 @@ func (ui UsabilityInfo) String() string {
 	}
 }
 
+
+type LogitechDeviceCapabilities byte
+
+const (
+	LOGITECH_DEVICE_CAPS_LINK_ENCRYPTION     = LogitechDeviceCapabilities(1 << 0)
+	LOGITECH_DEVICE_CAPS_UNIFYING_COMPATIBLE = LogitechDeviceCapabilities(1 << 2) // if not set pairing aborts with "not Unifying compatible"
+
+	//Assumption on remaining bits (1 and 2):
+	// - software enabled (DJ support)
+	// - battery status support ?
+	// - power switch position ??
+)
+
+func (caps LogitechDeviceCapabilities) String() (res string) {
+	if (caps & LOGITECH_DEVICE_CAPS_UNIFYING_COMPATIBLE) > 0 {
+		res = "Unifying compatible"
+	} else {
+		res = "not Unifying compatible"
+	}
+
+	if (caps & LOGITECH_DEVICE_CAPS_LINK_ENCRYPTION) > 0 {
+		res += ", link encryption enabled"
+	} else {
+		res += ", link encryption disabled"
+	}
+
+	return res
+}
+
+
 type ReportTypes uint32
 
 const (
@@ -189,6 +219,7 @@ type DeviceInfo struct {
 	DefaultReportInterval time.Duration
 	WPID                  []byte
 	DeviceType            DeviceType
+	Caps				LogitechDeviceCapabilities
 	Serial                []byte
 	RFAddr                []byte
 	ReportTypes           ReportTypes
@@ -208,6 +239,7 @@ func (di *DeviceInfo) String() string {
 	res += fmt.Sprintf("\tDevice type:                 %#02x (%s)\n", byte(di.DeviceType), di.DeviceType.String())
 	res += fmt.Sprintf("\tSerial:                      %02x:%02x:%02x:%02x\n", di.Serial[0], di.Serial[1], di.Serial[2], di.Serial[3])
 	res += fmt.Sprintf("\tReport types:                %08x (%s)\n", uint32(di.ReportTypes), di.ReportTypes.String())
+	res += fmt.Sprintf("\tCapabilities:                %02x (%s)\n", byte(di.Caps), di.Caps.String())
 	res += fmt.Sprintf("\tUsability Info:              %#02x (%s)\n", byte(di.UsabilityInfo), di.UsabilityInfo.String())
 	res += fmt.Sprintf("\tName:                        %s\n", di.Name)
 	res += fmt.Sprintf("\tRF address:                  %02x:%02x:%02x:%02x:%02x\n", di.RFAddr[0], di.RFAddr[1], di.RFAddr[2], di.RFAddr[3], di.RFAddr[4])
@@ -217,7 +249,7 @@ func (di *DeviceInfo) String() string {
 		res += fmt.Sprintf("\tKey:                         %02x\n", di.Key)
 		//res += fmt.Sprintf("\tKey:                         % 02x **REDACTED**\n", di.Key[:3])
 	} else {
-		res += fmt.Sprintf("\tKey:                         none (no link encryption in use)\n")
+		res += fmt.Sprintf("\tKey:                         none (no link encryption in use or key not extractable)\n")
 	}
 
 	return res

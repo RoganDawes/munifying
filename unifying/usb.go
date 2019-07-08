@@ -5,12 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"github.com/google/gousb"
-	"log"
+	log "github.com/sirupsen/logrus"
 	"time"
 )
 
 var (
-	eNoDongle        = errors.New("No LocalUSBDongle dongle found")
+	eNoDongle        = errors.New("No Logitech Receiver dongle found")
 )
 
 const (
@@ -136,7 +136,7 @@ func (u *LocalUSBDongle) SetShowInOut(show bool) {
 }
 
 func (u *LocalUSBDongle) Close() {
-	fmt.Println("Closing LocalUSBDongle dongle...")
+	fmt.Println("Closing Logitech Receiver dongle...")
 	if u.cancel != nil {
 		u.cancel()
 	}
@@ -218,21 +218,52 @@ func (u *LocalUSBDongle) HIDPP_SendAndCollectResponses(deviceID byte, id HidPPMs
 
 }
 
+func (u *LocalUSBDongle) HIDPP_Send(deviceID byte, id HidPPMsgSubID, parameters []byte) (err error) {
+	params := make([]byte, USB_REPORT_TYPE_HIDPP_SHORT_PAYLOAD_LEN)
+	reportType := USB_REPORT_TYPE_HIDPP_SHORT
+
+	if len(parameters) > USB_REPORT_TYPE_HIDPP_SHORT_PAYLOAD_LEN {
+		params = make([]byte, USB_REPORT_TYPE_HIDPP_LONG_PAYLOAD_LEN)
+		reportType = USB_REPORT_TYPE_HIDPP_LONG
+	}
+
+	copy(params, parameters)
+
+	hidppReq := &HidPPMsg{
+		ReportID:   reportType,
+		DeviceID:   deviceID,
+		MsgSubID:   id,
+		Parameters: params,
+	}
+	return u.SendUSBReport(hidppReq)
+}
+
 func (u *LocalUSBDongle) EnablePairing(timeOutSeconds byte, devNumber byte, blockTillOff bool) (err error) {
 	//Enable pairing
 	connectDevices := byte(0x01) //open lock
 	deviceNumber := devNumber    //According to specs: Same value as device index transmitted in 0x41 notification, but we haven't tx'ed anything
 	openLockTimeout := timeOutSeconds
 	fmt.Printf("Enable pairing for %d seconds\n", openLockTimeout)
+
+/*
+	if !blockTillOff {
+		return u.HIDPP_Send(0xff, HIDPP_MSG_ID_SET_REGISTER_REQ, []byte{byte(DONGLE_HIDPP_REGISTER_PAIRING), connectDevices, deviceNumber, openLockTimeout})
+	}
+*/
 	responses, err := u.HIDPP_SendAndCollectResponses(0xff, HIDPP_MSG_ID_SET_REGISTER_REQ, []byte{byte(DONGLE_HIDPP_REGISTER_PAIRING), connectDevices, deviceNumber, openLockTimeout})
 	for _, r := range responses {
 		fmt.Println(r.String())
 	}
+	if err != nil {
+		return
+	}
+
 	fmt.Println("... Enable pairing response (should be enabled)\n")
 
 	if !blockTillOff {
-		return
+		return nil
 	}
+
 
 	//Parse successive input reports till new "receiver lock information" with lock closed occurs
 	fmt.Println("Printing follow up reports ...")
@@ -248,7 +279,7 @@ func (u *LocalUSBDongle) EnablePairing(timeOutSeconds byte, devNumber byte, bloc
 					case 0x00:
 						return nil //"no error"
 					case 0x01:
-						return errors.New("timeout")
+						return errors.New("pairing timeout or interrupted")
 					case 0x02:
 						return errors.New("unsupported device")
 					case 0x03:
@@ -276,6 +307,14 @@ func (u *LocalUSBDongle) EnablePairing(timeOutSeconds byte, devNumber byte, bloc
 		}
 	}
 
+}
+
+func (u *LocalUSBDongle) DisablePairing() (err error) {
+	//Enable pairing
+	connectDevices := byte(0x02) //close lock
+
+	_,err = u.HIDPP_SendAndCollectResponses(0xff, HIDPP_MSG_ID_SET_REGISTER_REQ, []byte{byte(DONGLE_HIDPP_REGISTER_PAIRING), connectDevices, 0, 0})
+	return err
 }
 
 func (u *LocalUSBDongle) Unpair(deviceIndex byte) (err error) {
@@ -374,6 +413,8 @@ func (u *LocalUSBDongle) GetDevicePairingInfo(deviceID byte) (res DeviceInfo, er
 	res.DefaultReportInterval = time.Duration(devPairingInfo.Parameters[3]) * time.Millisecond;
 	res.WPID = devPairingInfo.Parameters[4:6]
 	res.DeviceType = DeviceType(devPairingInfo.Parameters[8])
+
+	res.Caps = LogitechDeviceCapabilities(devPairingInfo.Parameters[9])
 
 	infoType = byte(0x30) //extended pairing Info
 	//fmt.Printf("GetDevicePairingInfo devIdx %d, infoType %02x\n", deviceID, infoType)
@@ -686,14 +727,15 @@ func NewLocalUSBDongle() (res *LocalUSBDongle, err error) {
 	*/
 
 	if res.Dev, err = res.UsbCtx.OpenDeviceWithVIDPID(VID, PID_UNIFYING); err == nil && res.Dev != nil {
-		log.Println("Logitech Unifying dongle found")
+		fmt.Println("Logitech Unifying dongle found")
 	} else if res.Dev, err = res.UsbCtx.OpenDeviceWithVIDPID(VID, PID_RR0011); err == nil && res.Dev != nil {
-		log.Println("Found CU0016 Dongle for Logitech SPOTLIGHT presentation clicker")
+		fmt.Println("Found CU0016 Dongle for Logitech SPOTLIGHT presentation clicker")
 	} else if res.Dev, err = res.UsbCtx.OpenDeviceWithVIDPID(VID, PID_CU0016); err == nil && res.Dev != nil {
-		log.Println("Found CU0016 Dongle for R500 presentation clicker")
+		fmt.Println("Found CU0016 Dongle for R500 presentation clicker")
 	} else {
 		res.Close()
-		log.Println("No known dongle found")
+		log.Fatal("No known dongle found")
+
 		return nil, eNoDongle
 	}
 
