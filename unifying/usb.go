@@ -14,10 +14,10 @@ var (
 )
 
 const (
-	VID gousb.ID = 0x046d
-	PID gousb.ID = 0xc52b //cu0007, cu0008, cu0012
-	PID_CU0016 gousb.ID = 0xc540 //cu0016
-	PID_RR0011 gousb.ID = 0xc53e //R-R0011
+	VID          gousb.ID = 0x046d
+	PID_UNIFYING gousb.ID = 0xc52b //cu0007, cu0008, cu0012
+	PID_CU0016   gousb.ID = 0xc540 //cu0016
+	PID_RR0011   gousb.ID = 0xc53e //R-R0011
 )
 
 
@@ -666,21 +666,36 @@ func NewLocalUSBDongle() (res *LocalUSBDongle, err error) {
 	res.showInOut = true
 
 	res.UsbCtx = gousb.NewContext()
-	res.Dev, err = res.UsbCtx.OpenDeviceWithVIDPID(VID, PID)
+
+	/*
+	res.Dev, err = res.UsbCtx.OpenDeviceWithVIDPID(VID, PID_UNIFYING)
 	if err != nil || res.Dev == nil {
 
 		log.Println("No Unifying dongle found, try to find dongle for R500 presentation clicker")
 
 		// try R500 dongle CU0016
-		res.Dev, err = res.UsbCtx.OpenDeviceWithVIDPID(VID, PID_CU0016)
+		res.Dev, err = res.UsbCtx.OpenDeviceWithVIDPID(VID, PID_RR0011)
 		if err != nil || res.Dev == nil {
 			res.Close()
 			log.Println("No valid Unifying or presentation clicker dongle found")
 			return nil, eNoDongle
 		}
-		log.Println("Found CU0016 for R500 presentation clicker")
+		log.Println("Found RR0011 for SPOTLIGHT presentation clicker")
 	}
 	fmt.Println("LocalUSBDongle dongle found", res.Dev)
+	*/
+
+	if res.Dev, err = res.UsbCtx.OpenDeviceWithVIDPID(VID, PID_UNIFYING); err == nil && res.Dev != nil {
+		log.Println("Logitech Unifying dongle found")
+	} else if res.Dev, err = res.UsbCtx.OpenDeviceWithVIDPID(VID, PID_RR0011); err == nil && res.Dev != nil {
+		log.Println("Found CU0016 Dongle for Logitech SPOTLIGHT presentation clicker")
+	} else if res.Dev, err = res.UsbCtx.OpenDeviceWithVIDPID(VID, PID_CU0016); err == nil && res.Dev != nil {
+		log.Println("Found CU0016 Dongle for R500 presentation clicker")
+	} else {
+		res.Close()
+		log.Println("No known dongle found")
+		return nil, eNoDongle
+	}
 
 	//Get device config 1
 	res.Config, err = res.Dev.Config(1)

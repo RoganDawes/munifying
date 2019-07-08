@@ -10,7 +10,7 @@ import (
 
 func main() {
 	enterPairing := true
-	unpairAll := false
+	unpairAll := true
 
 	usb, err := unifying.NewLocalUSBDongle()
 	if err != nil {
@@ -41,20 +41,13 @@ func main() {
 		deviceNumber := byte(0x01) //According to specs: Same value as device index transmitted in 0x41 notification, but we haven't tx'ed anything
 		openLockTimeout := byte(60)
 		pe := usb.EnablePairing(openLockTimeout, deviceNumber,true)
-		fmt.Printf("Pairing mode exited: %v\n", pe)
+		fmt.Printf("Pairing mode exitted: %v\n", pe)
 	}
 
 	return
 
-/*
-	fmt.Println(usb.DumpRawKeyData(0))
-	fmt.Println(usb.DumpRawKeyData(1))
-	fmt.Println(usb.DumpRawKeyData(2))
-	fmt.Println(usb.DumpRawKeyData(3))
-	fmt.Println(usb.DumpRawKeyData(4))
-	fmt.Println(usb.DumpRawKeyData(5))
-*/
 
+	// Memdump using undocumented vendor command
 
 	// Test mem dump
 	startAddr := uint16(0x0000)
@@ -86,10 +79,6 @@ func main() {
 		fmt.Println(r.String())
 	}
 
-	//return
-
-
-//	return
 
 /*
 	// Request dongle firmware version from firmware register
