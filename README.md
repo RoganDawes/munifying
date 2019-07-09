@@ -16,12 +16,12 @@ The tool was tested for the following receivers:
 Supported functionality:
 - set receiver into pairing mode
 - unpair a single device or all devices
-- dump AES keys for devices vulnerable to CVE-2019-13054 or CVE-2019-13055 *disabled in pre-release*
+- dump AES keys for devices vulnerable to CVE-2019-13054 or CVE-2019-13055 *(disabled in pre-release)*
     - working **Unifying dongles**: CU0008, CU0012 (likely other TI CC2544 based dongles with WPID 0x8808)
     - working **presentation clicker dongles**: CU0016 for Spotlight (046d:c540), CU0016 for R500 (046d:c53e)
     - not working Unifying dongles: CU0007 (likely other Nordic nRF24 based dongles with WPID 0x8802)
-- dump readable memory range with undocumented HID++ command (used for AES key derivation) *disabled in pre-release*
-- store full receiver dump to file in order to re-import it to `mjackit` *disabled in pre-release*
+- dump readable memory range with undocumented HID++ command (used for AES key derivation) *(disabled in pre-release)*
+- store full receiver dump to file in order to re-import it to `mjackit` *(disabled in pre-release)*
 - show Info of all devices paired to a receiver
 
 ## Note on pre-release
