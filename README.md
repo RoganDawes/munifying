@@ -27,17 +27,22 @@ Supported functionality:
 ## Note on pre-release
 
 In sense of responsible disclosure, I agreed with Logitech, not to publish in-depth content related to CVE-2019-13054
-or CVE-2019-13055 (USB based AES key extraction from Texas Instruments based dongles).
-The pre-release is only provided in binary form (pre-compiled for Linux, x64).
+or CVE-2019-13055 (USB based AES key extraction from Texas Instruments based dongles) before the respective patch is
+released in August 2019.
 
-For Unifying devices, CVE-2019-13052 exists. This vulnerability covers AES key derivation based on a sniffed device
-pairing (or re-pairing). **This vulnerability will not be fixed.** Although, AES key extraction is currently disabled,
-`munifying` could be used to unpair and pair devices. In conjunction with `LOGITacker` or `mjackit` this allows AES key
-sniffing, using passive RF monitoring. For Unifying receivers, unpairing and re-pairing could be done with the official 
-Unifying software. **Logitech SPOTLIGHT and R500 presentation clickers have an undocumented pairing functionality, which
-ultimately could be used to replicate CVE-2019-13052 for those presentation remotes, too**
+**The munifying pre-release is only provided in binary form (pre-compiled for Linux, x64) and is fairly limited.**
 
-In order to re-pair an R500/SPOTLIGHT:
+So why bother ?
+
+For Unifying devices CVE-2019-13052 covers AES key derivation based on a sniffed device pairing (or re-pairing). 
+**This vulnerability will not be addressed by Logitech.** Although, direct USB AES key extraction is currently 
+disabled, `munifying` could be used to unpair and pair devices. In conjunction with `LOGITacker` or `mjackit` this 
+allows AES key sniffing during pairing, using passive RF monitoring. For Unifying receivers, unpairing and re-pairing 
+could, of course, be done with the official Unifying software. **But Logitech SPOTLIGHT and R500 presentation clickers 
+provide undocumented pairing functionality, which ultimately could be used to replicate CVE-2019-13052 for those 
+presentation remotes, too. Munifying is capable to put the respective receivers into pairing mode.**
+
+In order to re-pair an R500/SPOTLIGHT device to its receiver:
 
 1) Unpair the device from the receiver with `munifying unpairall`
 2) Set the receiver to pairing mode `munifying pair`
@@ -46,6 +51,8 @@ In order to re-pair an R500/SPOTLIGHT:
 In order to retrieve the AES link encryption key, `mjackit` or `LOGITacker` have to be ran in "pair sniffing" mode.
 In contrast to `mjackit`, `LOGITacker` is able to bypass the key blacklisting filter of the presentation remotes for
 keystroke injection against Windows hosts (see CVE-2019-13054 for details) 
+
+Full release will be published at: 
 
 # Requirements
 
