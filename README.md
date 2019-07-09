@@ -1,19 +1,18 @@
-# munifying by Marcus Mengs
+# munifying by Marcus Mengs (@MaMe82)
 
-The tool `munifying` could be used to interact with Logitech receivers from USB end.
-It was developed during vulnerability research and is provided as-is.
+The tool `munifying` could be used to interact with Logitech receivers from USB side (not RF).
+This tool was developed during vulnerability research and is provided as-is.
 
-The main purpose is to demo extraction of AES link encryption keys and device RF addresses from the dongle via USB
-(CVE-2019-13054 and CVE-2019-13055) or at least support re-pairing of devices, which again leads to AES key extraction
-using if the RF part of pairing is sniffed (CVE-2019-13052).
+The main purpose of munifying is the demonstration of the extraction of AES link encryption keys and device RF addresses 
+of paired devices from a Logitech receiver dongle via USB (CVE-2019-13054 and CVE-2019-13055) or, at least, to accomplish
+the re-pairing of devices, which indirectly leads to AES key extraction based on passive RF sniffing during pairing
+(CVE-2019-13052).
 
-The tool was tested for the following receivers:
+While direct extraction only requires physical access to the receiver, the re-pairing approach requires access to 
+receiver and device. A vendor patch, on the other hand, will only be applied for USB-based AES key extraction.
 
-- Logitech Unifying: CU0007, CU0008, CU0012
-- Logitech R500 presentation remote: CU0016
-- Logitech SPOTLIGHT presentation remote: CU0016
+## supported functionality:
 
-Supported functionality:
 - set receiver into pairing mode
 - unpair a single device or all devices
 - dump AES keys for devices vulnerable to CVE-2019-13054 or CVE-2019-13055 (disabled in pre-release)
@@ -47,11 +46,11 @@ In order to retrieve the AES link encryption key, `mjackit` or `LOGITacker` have
 In contrast to `mjackit`, `LOGITacker` is able to bypass the key blacklisting filter of the presentation remotes for
 keystroke injection against Windows hosts (see CVE-2019-13054 for details) 
 
-# Requirements
+## Requirements
 
 Although written in Go, the `munifying` tool has a native dependency on `libusb-1.0-0`.
 
-# Usage
+## Usage
 
 ```
 Usage:
@@ -77,12 +76,19 @@ Note:
 There is no support for multiple receivers connected to USB at the same time. The tool always interacts with
 the first receiver discovered on USB bus.
 
-# Unsupported receivers (no HID++ capabilities)
+## Supported Logitech receivers (tested)
+
+- Logitech Unifying: CU0007, CU0008, CU0012
+- Logitech R500 presentation remote: CU0016
+- Logitech SPOTLIGHT presentation remote: CU0016
+
+
+## Unsupported receivers (no HID++ capabilities)
 
 - CU0010 used by M171 mouse (no key extraction needed, unencrypted)
 - CU0014 used by R400 (no key extraction needed, unencrypted)
 
-# DISCLAIMER
+## DISCLAIMER
 - no responsibility for damage or destroyed devices 
 - no illegal use, meant for demonstration and educational purposes
 
