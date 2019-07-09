@@ -243,11 +243,11 @@ func (di *DeviceInfo) String() string {
 	res += fmt.Sprintf("\tUsability Info:              %#02x (%s)\n", byte(di.UsabilityInfo), di.UsabilityInfo.String())
 	res += fmt.Sprintf("\tName:                        %s\n", di.Name)
 	res += fmt.Sprintf("\tRF address:                  %02x:%02x:%02x:%02x:%02x\n", di.RFAddr[0], di.RFAddr[1], di.RFAddr[2], di.RFAddr[3], di.RFAddr[4])
-	res += fmt.Sprintf("\tKeyData:                     % 02x\n", di.RawKeyData)
+	res += fmt.Sprintf("\tKeyData:                     **pre-release REDACTED**\n")
 
 	if len(di.Key) > 0 {
-		res += fmt.Sprintf("\tKey:                         %02x\n", di.Key)
-		//res += fmt.Sprintf("\tKey:                         % 02x **REDACTED**\n", di.Key[:3])
+		//res += fmt.Sprintf("\tKey:                         %02x\n", di.Key)
+		res += fmt.Sprintf("\tKey:                         **pre-release REDACTED**\n")
 	} else {
 		res += fmt.Sprintf("\tKey:                         none (no link encryption in use or key not extractable)\n")
 	}

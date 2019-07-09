@@ -78,10 +78,10 @@ func DumpDongleInfo() {
 // infoCmd represents the info command
 var dumpCmd = &cobra.Command{
 	Use:   "dump",
-	Short: "Dump dongle memory utilizing secret HID++ command",
+	Short: "**not in pre-release** Dump dongle memory utilizing secret HID++ command",
 	Long: "",
 	Run: func(cmd *cobra.Command, args []string) {
-		DumpDongleInfo()
+		fmt.Println("command not available in pre-release")
 	},
 }
 

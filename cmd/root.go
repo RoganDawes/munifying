@@ -28,7 +28,14 @@ var cfgFile string
 var rootCmd = &cobra.Command{
 	Use:   "munifying",
 	Short: "Demo tool for USB interaction with Logitech wireless receivers",
-	Long: `'munifying' by Marcus Mengs is a tool which supports 
+	Long: `Limited pre-release
+===============================================================
+Full tool, along with source, will be published in August 2019
+when the Logitech patch for CVE-2019-13054 and CVE-2019-13055 
+is available
+==============================================================
+
+'munifying' by Marcus Mengs is a tool which supports 
 Proof-of-Concepts for vulnerabilities of Logitech wireless 
 peripherals. It is focused on USB interaction with Unifying 
 receivers. Interaction with the radio end of respective 

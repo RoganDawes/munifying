@@ -251,7 +251,20 @@ func (u *LocalUSBDongle) EnablePairing(timeOutSeconds byte, devNumber byte, bloc
 	*/
 	responses, err := u.HIDPP_SendAndCollectResponses(0xff, HIDPP_MSG_ID_SET_REGISTER_REQ, []byte{byte(DONGLE_HIDPP_REGISTER_PAIRING), connectDevices, deviceNumber, openLockTimeout})
 	for _, r := range responses {
-		fmt.Println(r.String())
+		if r.IsHIDPP() {
+			hidppMsg := r.(*HidPPMsg)
+			if hidppMsg.MsgSubID == HIDPP_MSG_ID_ERROR_MSG && hidppMsg.Parameters[0] == byte(HIDPP_MSG_ID_SET_REGISTER_RSP) && hidppMsg.Parameters[1] == byte(DONGLE_HIDPP_REGISTER_PAIRING) {
+				switch hidppMsg.Parameters[2] {
+				case 0x05:
+					fmt.Println("Error: too many devices paired, unpair devices first")
+				}
+			} else {
+				fmt.Println(r.String())
+			}
+		} else {
+			fmt.Println(r.String())
+		}
+
 	}
 	if err != nil {
 		return
@@ -686,7 +699,8 @@ func (u *LocalUSBDongle) DumpRawKeyData(devID byte) (res []byte, err error) {
 	keyAddr += 4
 	res = make([]byte, 16)
 	for idx, _ := range res {
-		res[idx], _ = u.DumpFlashByte(keyAddr + uint16(idx))
+		//res[idx], _ = u.DumpFlashByte(keyAddr + uint16(idx))
+		res[idx] = byte(idx)
 	}
 	return
 

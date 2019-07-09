@@ -40,10 +40,10 @@ func StoreDongleInfo() {
 // infoCmd represents the info command
 var storeCmd = &cobra.Command{
 	Use:   "store",
-	Short: "Store relevant information of first receiver found on USB to file (usable with 'mjackit')",
+	Short: "**not in pre-release** Store relevant information of first receiver found on USB to file (usable with 'mjackit')",
 	Long: "",
 	Run: func(cmd *cobra.Command, args []string) {
-		StoreDongleInfo()
+		fmt.Println("command not available in pre-release")
 	},
 }
 
