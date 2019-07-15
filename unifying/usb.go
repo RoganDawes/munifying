@@ -692,6 +692,24 @@ func (u *LocalUSBDongle) DumpRawKeyData(devID byte) (res []byte, err error) {
 
 }
 
+func (u *LocalUSBDongle) OpenDeviceWithVID(vid gousb.ID) (*gousb.Device, error) {
+	var found bool
+	devs, err := u.UsbCtx.OpenDevices(func(desc *gousb.DeviceDesc) bool {
+		if found {
+			return false
+		}
+		if desc.Vendor == gousb.ID(vid) {
+			found = true
+			return true
+		}
+		return false
+	})
+	if len(devs) == 0 {
+		return nil, err
+	}
+	return devs[0], nil
+}
+
 func NewLocalUSBDongle() (res *LocalUSBDongle, err error) {
 	res = &LocalUSBDongle{}
 	res.showInOut = true
@@ -706,6 +724,8 @@ func NewLocalUSBDongle() (res *LocalUSBDongle, err error) {
 		fmt.Println("Found CU0016 Dongle for R500 presentation clicker")
 	} else if res.Dev, err = res.UsbCtx.OpenDeviceWithVIDPID(VID, PID_CU0014_R400); err == nil && res.Dev != nil {
 		fmt.Println("Found CU0010 Dongle for M171 mouse")
+	} else if res.Dev, err = res.OpenDeviceWithVID(VID); err == nil && res.Dev != nil {
+		fmt.Println("Found unknown Logitech dongle")
 	} else {
 		res.Close()
 		log.Fatal("No known dongle found")
