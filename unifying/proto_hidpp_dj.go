@@ -9,8 +9,8 @@ var (
 	eNoHidPPMsg      = errors.New("No valid HID++ 1.0 report")
 	eNoHidDJReport   = errors.New("No valid DJ report")
 	eNoHidPPReportID = errors.New("No valid HID++ 1.0 report type (set to USB_REPORT_TYPE_HIDPP_SHORT or USB_REPORT_TYPE_HIDPP_LONG)")
-
 )
+
 const (
 	USB_REPORT_TYPE_DJ_SHORT_LEN         = 15
 	USB_REPORT_TYPE_DJ_LONG_LEN          = 32
@@ -98,6 +98,47 @@ func (t HidPPMsgSubID) String() string {
 	return fmt.Sprintf("Unknown HID++ SubID %02x", byte(t))
 }
 
+type HidPPErrorCode byte
+
+const (
+	HIDPP_ERROR_CODE_NO_ERROR         HidPPErrorCode = 0x00
+	HIDPP_ERROR_CODE_UNKNOWN          HidPPErrorCode = 0x01
+	HIDPP_ERROR_CODE_INVALID_ARGUMENT HidPPErrorCode = 0x02
+	HIDPP_ERROR_CODE_OUT_OF_RANGE HidPPErrorCode = 0x03
+	HIDPP_ERROR_CODE_HW_ERROR HidPPErrorCode = 0x04
+	HIDPP_ERROR_CODE_LOGITECH_INTERNAL HidPPErrorCode = 0x05
+	HIDPP_ERROR_CODE_INVALID_FEATURE_INDEX HidPPErrorCode = 0x06
+	HIDPP_ERROR_CODE_INVALID_FUNCTION_ID HidPPErrorCode = 0x07
+	HIDPP_ERROR_CODE_BUSY HidPPErrorCode = 0x08
+	HIDPP_ERROR_CODE_UNSUPPORTED HidPPErrorCode = 0x09
+)
+
+func (t HidPPErrorCode) String() string {
+	switch t {
+	case HIDPP_ERROR_CODE_NO_ERROR:
+		return "NO ERROR"
+	case HIDPP_ERROR_CODE_UNKNOWN:
+		return "UNKNOWN ERROR"
+	case HIDPP_ERROR_CODE_INVALID_ARGUMENT:
+		return "INVALID ARGUMENT ERROR"
+	case HIDPP_ERROR_CODE_OUT_OF_RANGE:
+		return "OUT OF RANGE ERROR"
+	case HIDPP_ERROR_CODE_HW_ERROR:
+		return "HW ERROR"
+	case HIDPP_ERROR_CODE_LOGITECH_INTERNAL:
+		return "LOGITECH INTERNAL ERROR"
+	case HIDPP_ERROR_CODE_INVALID_FEATURE_INDEX:
+		return "INVALID FEATURE INDEX ERROR"
+	case HIDPP_ERROR_CODE_INVALID_FUNCTION_ID:
+		return "INVALID FUNCTION ID ERROR"
+	case HIDPP_ERROR_CODE_BUSY:
+		return "BUSY ERROR"
+	case HIDPP_ERROR_CODE_UNSUPPORTED:
+		return "UNSUPPORTED ERROR"
+	}
+	return fmt.Sprintf("Undocumented error code %02x", byte(t))
+}
+
 type DJReportType byte
 
 const (
@@ -163,15 +204,18 @@ const (
 )
 
 type HidPPRegister byte
+
 const (
 	DONGLE_HIDPP_REGISTER_WIRELESS_NOTIFICATIONS HidPPRegister = 0x00
 	DONGLE_HIDPP_REGISTER_CONNECTION_STATE       HidPPRegister = 0x02
 	DONGLE_HIDPP_REGISTER_PAIRING                HidPPRegister = 0xb2
 	DONGLE_HIDPP_REGISTER_DEVICE_ACTIVITY        HidPPRegister = 0xb3
 	DONGLE_HIDPP_REGISTER_PAIRING_INFORMATION    HidPPRegister = 0xb5
-	DONGLE_HIDPP_REGISTER_FIRMWARE               HidPPRegister = 0xf1
+	DONGLE_HIDPP_REGISTER_FIRMWARE_UPDATE        HidPPRegister = 0xf0
+	DONGLE_HIDPP_REGISTER_FIRMWARE_INFO          HidPPRegister = 0xf1
 	DONGLE_HIDPP_REGISTER_SECRET_MEMDUMP         HidPPRegister = 0xd4
 )
+
 func (t HidPPRegister) String() string {
 	switch t {
 	case DONGLE_HIDPP_REGISTER_WIRELESS_NOTIFICATIONS:
@@ -184,12 +228,11 @@ func (t HidPPRegister) String() string {
 		return "REGISTER DEVICE ACTIVITY"
 	case DONGLE_HIDPP_REGISTER_PAIRING_INFORMATION:
 		return "REGISTER PAIRING INFORMATION"
-	case DONGLE_HIDPP_REGISTER_FIRMWARE:
+	case DONGLE_HIDPP_REGISTER_FIRMWARE_INFO:
 		return "REGISTER FIRMWARE"
 	}
 	return fmt.Sprintf("Unknown HID++ Register %02x", byte(t))
 }
-
 
 // for write/read parameters of short read/write from/to wireless notification register (0x00)
 const (
@@ -220,22 +263,21 @@ func (r *DJReport) String() (res string) {
 	switch r.Type {
 	case DJ_REPORT_TYPE_NOTIFICATION_DEVICE_PAIRED:
 		specialFunc := r.Parameters[0]
-		sfMoreNotif := specialFunc & 0x01 > 0
-		sfOtherFieldsNotRelevant := specialFunc & 0x02 > 0
+		sfMoreNotif := specialFunc&0x01 > 0
+		sfOtherFieldsNotRelevant := specialFunc&0x02 > 0
 
-		wpid := uint16(r.Parameters[2]) << 8 + uint16(r.Parameters[1])
+		wpid := uint16(r.Parameters[2])<<8 + uint16(r.Parameters[1])
 
-		reportTypeBitField := uint32(r.Parameters[3]) << 0 + uint32(r.Parameters[4]) << 8 + uint32(r.Parameters[5]) << 16 + uint32(r.Parameters[6]) << 24
+		reportTypeBitField := uint32(r.Parameters[3])<<0 + uint32(r.Parameters[4])<<8 + uint32(r.Parameters[5])<<16 + uint32(r.Parameters[6])<<24
 
-		bKeyboard := reportTypeBitField & DJ_REPORT_RF_TYPE_BITFIELD_KEYBOARD > 0
-		bMouse := reportTypeBitField & DJ_REPORT_RF_TYPE_BITFIELD_MOUSE > 0
-		bConCtl := reportTypeBitField & DJ_REPORT_RF_TYPE_BITFIELD_CONSUMER_CONTROL > 0
-		bSysCtl := reportTypeBitField & DJ_REPORT_RF_TYPE_BITFIELD_POWER_KEYS > 0
-		bMedCtr := reportTypeBitField & DJ_REPORT_RF_TYPE_BITFIELD_MEDIA_CENTER > 0
-		bLED := reportTypeBitField & DJ_REPORT_RF_TYPE_BITFIELD_KEYBOARD_LEDS > 0
-		bHIDppShort := reportTypeBitField & DJ_REPORT_RF_TYPE_BITFIELD_HIDPP_SHORT > 0
-		bHIDppLong := reportTypeBitField & DJ_REPORT_RF_TYPE_BITFIELD_HIDPP_LONG > 0
-
+		bKeyboard := reportTypeBitField&DJ_REPORT_RF_TYPE_BITFIELD_KEYBOARD > 0
+		bMouse := reportTypeBitField&DJ_REPORT_RF_TYPE_BITFIELD_MOUSE > 0
+		bConCtl := reportTypeBitField&DJ_REPORT_RF_TYPE_BITFIELD_CONSUMER_CONTROL > 0
+		bSysCtl := reportTypeBitField&DJ_REPORT_RF_TYPE_BITFIELD_POWER_KEYS > 0
+		bMedCtr := reportTypeBitField&DJ_REPORT_RF_TYPE_BITFIELD_MEDIA_CENTER > 0
+		bLED := reportTypeBitField&DJ_REPORT_RF_TYPE_BITFIELD_KEYBOARD_LEDS > 0
+		bHIDppShort := reportTypeBitField&DJ_REPORT_RF_TYPE_BITFIELD_HIDPP_SHORT > 0
+		bHIDppLong := reportTypeBitField&DJ_REPORT_RF_TYPE_BITFIELD_HIDPP_LONG > 0
 
 		res += fmt.Sprintf("\n\tSpecial func: %#02x (more Notifications: %v other fields not relevant: %v)", specialFunc, sfMoreNotif, sfOtherFieldsNotRelevant)
 		res += fmt.Sprintf("\n\twpid: %#04x", wpid)
@@ -366,7 +408,7 @@ func (r *HidPPMsg) String() (res string) {
 		res += fmt.Sprintf("\n\tValue: % #x", r.Parameters[1:])
 
 		switch reg := HidPPRegister(r.Parameters[0]); reg {
-		case DONGLE_HIDPP_REGISTER_FIRMWARE:
+		case DONGLE_HIDPP_REGISTER_FIRMWARE_INFO:
 			res += fmt.Sprintf("\n\tRequested register: %s", reg)
 			switch r.Parameters[1] {
 			case 0x01:
@@ -388,11 +430,11 @@ func (r *HidPPMsg) String() (res string) {
 		res += fmt.Sprintf("\n\tDevice disconnected: %v", r.Parameters[0] == 0x02)
 	case HIDPP_MSG_ID_DEVICE_CONNECTION:
 		res += fmt.Sprintf("\n\tProtocol type: %#02x", r.Parameters[0])
-		res += fmt.Sprintf("\n\tDevice type: %#02x", r.Parameters[1] & 0x0F)
-		res += fmt.Sprintf("\n\tSoftware present: %v", r.Parameters[1] & 0x10 > 0)
-		res += fmt.Sprintf("\n\tLink encrypted: %v", r.Parameters[1] & 0x20 > 0)
-		res += fmt.Sprintf("\n\tLink established: %v", r.Parameters[1] & 0x40 == 0)
-		res += fmt.Sprintf("\n\tConnection with payload: %v", r.Parameters[1] & 0x80 > 0)
+		res += fmt.Sprintf("\n\tDevice type: %#02x", r.Parameters[1]&0x0F)
+		res += fmt.Sprintf("\n\tSoftware present: %v", r.Parameters[1]&0x10 > 0)
+		res += fmt.Sprintf("\n\tLink encrypted: %v", r.Parameters[1]&0x20 > 0)
+		res += fmt.Sprintf("\n\tLink established: %v", r.Parameters[1]&0x40 == 0)
+		res += fmt.Sprintf("\n\tConnection with payload: %v", r.Parameters[1]&0x80 > 0)
 		res += fmt.Sprintf("\n\tWireless PID: 0x%02x%02x", r.Parameters[3], r.Parameters[2])
 	case HIDPP_MSG_ID_RECEIVER_LOCKING_INFORMATION:
 		res += fmt.Sprintf("\n\tLock open: %v", r.Parameters[0] == 0x01)
@@ -412,6 +454,10 @@ func (r *HidPPMsg) String() (res string) {
 		res += fmt.Sprintf("\n\tLock error: %s", lock_err)
 	case HIDPP_MSG_ID_ERROR_MSG:
 		res += fmt.Sprintf("\n\tError notification with parameters: % #x", r.Parameters)
+		res += fmt.Sprintf("\n\t\tparam 0 (HID++ command)  : %#02x", r.Parameters[0])
+		res += fmt.Sprintf("\n\t\tparam 1 (likely register): %#02x - '%s'", r.Parameters[1], HidPPRegister(r.Parameters[1]).String())
+		res += fmt.Sprintf("\n\t\tparam 2 (error)          : %#02x - '%s'", r.Parameters[2], HidPPErrorCode(r.Parameters[2]).String())
+
 	}
 	return res
 }
@@ -471,5 +517,3 @@ func (r *HidPPMsg) IsHIDPP() bool {
 func (r *HidPPMsg) IsDJ() bool {
 	return r.ReportID == USB_REPORT_TYPE_DJ_LONG || r.ReportID == USB_REPORT_TYPE_DJ_SHORT
 }
-
-

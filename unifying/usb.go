@@ -10,7 +10,8 @@ import (
 )
 
 var (
-	eNoDongle = errors.New("No Logitech Receiver dongle found")
+	eNoDongle                   = errors.New("no Logitech Receiver dongle found")
+	ErrReceiverInBootloaderMode = errors.New("detected Logitech receiver seems to run in bootloader mode")
 )
 
 const (
@@ -19,6 +20,13 @@ const (
 	PID_CU0016_R500      gousb.ID = 0xc540 //cu0016
 	PID_CU0016_SPOTLIGHT gousb.ID = 0xc53e //R-R0011
 	PID_CU0014_R400      gousb.ID = 0xc538 //R-R0011
+
+	PID_BOOT_LOADER_NORDIC          gousb.ID = 0xaaaa //CU0007, tested BOT01.02_B0014 / RQR12.01_B0019 and BOT01.02_B0015 / RQR12.01_B0019; HW_PLATFORM_ID: nRF24LU1+
+	PID_BOOT_LOADER_TI              gousb.ID = 0xaaac //CU0008 (JNZCU0008), tested BOT03.01_B0008 / RQR24.01_B0023
+	PID_BOOT_LOADER_TI_NANO         gousb.ID = 0xaaad //CU0012, tested BOT03.03_B0009 / RQR24.07_B0030
+	PID_BOOT_LOADER_LIGHTSPEED_G603 gousb.ID = 0xaabe //CU0008 (JNZCU0008a), tested BOT03.02_B0009 / RQR39.04_B0036
+	PID_BOOT_LOADER_TI_SPOTLIGHT    gousb.ID = 0xaad3 //CU0016, tested BOT03.02_B0009 / RQR41.00_B0004
+	PID_BOOT_LOADER_TI_R500         gousb.ID = 0xaae1 //CU0016, tested BOT03.02_B0009 / RQR45.00_B0002
 )
 
 type LocalUSBDongle struct {
@@ -118,11 +126,11 @@ Outer:
 				fmt.Printf("Out: % #x\n", outdata)
 			}
 			u.Dev.Control(
-				0x21,                      //bit7: Host to device, bit6..5: Class: 0x1, bit4..0: Interface: 0x01
-				0x09,                      //request: 0x09 SET_REPORT
-				0x0200|uint16(outdata[0]), //Output: 0x02, Report ID: 0x10
-				2,                         //Index 0x02
-				outdata,                   //payload
+				0x21,                                //bit7: Host to device, bit6..5: Class: 0x1, bit4..0: Interface: 0x01
+				0x09,                                //request: 0x09 SET_REPORT
+				0x0200|uint16(outdata[0]),           //Output: 0x02, Report ID: 0x10
+				uint16(u.IfaceHIDPP.Setting.Number), //interface index 0x02
+				outdata,                             //payload
 			)
 		}
 	}
@@ -136,7 +144,7 @@ func (u *LocalUSBDongle) SetShowInOut(show bool) {
 }
 
 func (u *LocalUSBDongle) Close() {
-	fmt.Println("Closing Logitech Receiver dongle...")
+	fmt.Println("Closing Logitech receiver in Firmware mode (not bootloader)...")
 	if u.cancel != nil {
 		u.cancel()
 	}
@@ -377,6 +385,93 @@ func (u *LocalUSBDongle) GetDeviceActivityCounters() (activityCounters []byte, e
 	return
 }
 
+func (u *LocalUSBDongle) GetReceiverFirmwareMajorMinorVersion() (maj FirmwareMajor, min byte, err error) {
+	responses, err := u.HIDPP_SendAndCollectResponses(0xff, HIDPP_MSG_ID_GET_REGISTER_REQ, []byte{byte(DONGLE_HIDPP_REGISTER_FIRMWARE_INFO), 0x01})
+
+	var receiverFirmwareMajMin *HidPPMsg = nil
+	for _, r := range responses {
+		if r.IsHIDPP() {
+			hppmsg := r.(*HidPPMsg)
+			if hppmsg.MsgSubID == HIDPP_MSG_ID_GET_REGISTER_RSP && len(hppmsg.Parameters) == 4 && hppmsg.Parameters[0] == byte(DONGLE_HIDPP_REGISTER_FIRMWARE_INFO) {
+				//Connection state response
+				receiverFirmwareMajMin = hppmsg
+				break
+			}
+		}
+		fmt.Println(r.String())
+	}
+	if receiverFirmwareMajMin == nil {
+		err = errors.New("could not determine receiver firmware version")
+		return
+	}
+
+	maj = FirmwareMajor(receiverFirmwareMajMin.Parameters[2])
+	min = receiverFirmwareMajMin.Parameters[3]
+	fmt.Printf("Receiver dongle firmware: %02x.%02x - %s\n", byte(maj), min, maj.String())
+	return
+}
+
+func (u *LocalUSBDongle) GetReceiverBLMajorMinorVersion() (maj byte, min byte, err error) {
+	responses, err := u.HIDPP_SendAndCollectResponses(0xff, HIDPP_MSG_ID_GET_REGISTER_REQ, []byte{byte(DONGLE_HIDPP_REGISTER_FIRMWARE_INFO), 0x04})
+
+	var receiverFirmwareMajMin *HidPPMsg = nil
+	for _, r := range responses {
+		if r.IsHIDPP() {
+			hppmsg := r.(*HidPPMsg)
+			if hppmsg.MsgSubID == HIDPP_MSG_ID_GET_REGISTER_RSP && len(hppmsg.Parameters) == 4 && hppmsg.Parameters[0] == byte(DONGLE_HIDPP_REGISTER_FIRMWARE_INFO) {
+				//Connection state response
+				receiverFirmwareMajMin = hppmsg
+				break
+			}
+		}
+		fmt.Println(r.String())
+	}
+	if receiverFirmwareMajMin == nil {
+		err = errors.New("could not determine receiver BOOTLOADER version")
+		return
+	}
+
+	maj = receiverFirmwareMajMin.Parameters[2]
+	min = receiverFirmwareMajMin.Parameters[3]
+	fmt.Printf("Receiver BOOTLOADER: %02x.%02x\n", maj, min)
+	return
+}
+
+func (u *LocalUSBDongle) GetReceiverFirmwareBuildVersion() (build uint16, err error) {
+	responses, err := u.HIDPP_SendAndCollectResponses(0xff, HIDPP_MSG_ID_GET_REGISTER_REQ, []byte{byte(DONGLE_HIDPP_REGISTER_FIRMWARE_INFO), 0x02})
+
+	var receiverFirmwareMajMin *HidPPMsg = nil
+	for _, r := range responses {
+		if r.IsHIDPP() {
+			hppmsg := r.(*HidPPMsg)
+			if hppmsg.MsgSubID == HIDPP_MSG_ID_GET_REGISTER_RSP && len(hppmsg.Parameters) == 4 && hppmsg.Parameters[0] == byte(DONGLE_HIDPP_REGISTER_FIRMWARE_INFO) {
+				//Connection state response
+				receiverFirmwareMajMin = hppmsg
+				break
+			}
+		}
+		fmt.Println(r.String())
+	}
+	if receiverFirmwareMajMin == nil {
+		err = errors.New("could not determine receiver firmware version")
+		return
+	}
+
+	build = uint16(receiverFirmwareMajMin.Parameters[2]) << 8
+	build += uint16(receiverFirmwareMajMin.Parameters[3])
+	fmt.Printf("Receiver dongle firmware build: %04x\n", build)
+	return
+}
+
+func (u *LocalUSBDongle) SwitchToBootloader() (build uint16, err error) {
+	err = u.HIDPP_Send(0xff, HIDPP_MSG_ID_SET_REGISTER_REQ, []byte{byte(DONGLE_HIDPP_REGISTER_FIRMWARE_UPDATE), byte('I'), byte('C'), byte('P')})
+	if err != nil {
+		return
+	}
+
+	return
+}
+
 func (u *LocalUSBDongle) GetDevicePairingInfo(deviceID byte) (res DeviceInfo, err error) {
 	if deviceID < 0 || deviceID > 6 {
 		err = errors.New("invalid device ID")
@@ -559,11 +654,11 @@ func (u *LocalUSBDongle) GetDongleInfo() (res DongleInfo, err error) {
 
 	res.Serial = dongleInfo2.Parameters[2:6]
 
-	responses, err = u.HIDPP_SendAndCollectResponses(0xff, HIDPP_MSG_ID_GET_REGISTER_REQ, []byte{byte(DONGLE_HIDPP_REGISTER_FIRMWARE), 0x04, 0x00})
+	responses, err = u.HIDPP_SendAndCollectResponses(0xff, HIDPP_MSG_ID_GET_REGISTER_REQ, []byte{byte(DONGLE_HIDPP_REGISTER_FIRMWARE_INFO), 0x04, 0x00})
 	for _, r := range responses {
 		if r.IsHIDPP() {
 			hppmsg := r.(*HidPPMsg)
-			if hppmsg.MsgSubID == HIDPP_MSG_ID_GET_REGISTER_RSP && len(hppmsg.Parameters) == USB_REPORT_TYPE_HIDPP_SHORT_PAYLOAD_LEN && hppmsg.Parameters[0] == byte(DONGLE_HIDPP_REGISTER_FIRMWARE) && hppmsg.Parameters[1] == 0x04 {
+			if hppmsg.MsgSubID == HIDPP_MSG_ID_GET_REGISTER_RSP && len(hppmsg.Parameters) == USB_REPORT_TYPE_HIDPP_SHORT_PAYLOAD_LEN && hppmsg.Parameters[0] == byte(DONGLE_HIDPP_REGISTER_FIRMWARE_INFO) && hppmsg.Parameters[1] == 0x04 {
 				//Connection state response
 				res.BootloaderMajor = hppmsg.Parameters[2]
 				res.BootloaderMinor = hppmsg.Parameters[3]
@@ -725,7 +820,11 @@ func NewLocalUSBDongle() (res *LocalUSBDongle, err error) {
 	} else if res.Dev, err = res.UsbCtx.OpenDeviceWithVIDPID(VID, PID_CU0014_R400); err == nil && res.Dev != nil {
 		fmt.Println("Found CU0010 Dongle for M171 mouse")
 	} else if res.Dev, err = res.OpenDeviceWithVID(VID); err == nil && res.Dev != nil {
-		fmt.Println("Found unknown Logitech dongle")
+		fmt.Println("Found unknown Logitech dongle in Firmware Mode (not bootloader)")
+		if (res.Dev.Desc.Product&0xff00 == 0xaa00) {
+			res.Close()
+			return nil, ErrReceiverInBootloaderMode
+		}
 	} else {
 		res.Close()
 		log.Fatal("No known dongle found")
@@ -783,6 +882,444 @@ Outer:
 
 	res.sndQueue = make(chan USBReport)
 	res.rcvQueue = make(chan USBReport)
+
+	res.ctx, res.cancel = context.WithCancel(context.Background())
+
+	go res.rcvLoop()
+	go res.sndLoop()
+
+	return
+}
+
+type USBBootloaderDongle struct {
+	UsbCtx   *gousb.Context
+	Dev      *gousb.Device
+	Config   *gousb.Config
+	IfaceHID *gousb.Interface
+	EpInHid  *gousb.InEndpoint
+
+	sndQueue chan BootloaderReport
+	rcvQueue chan BootloaderReport
+	cancel   context.CancelFunc
+	ctx      context.Context
+
+	showInOut bool
+}
+
+func (u *USBBootloaderDongle) SendUSBReport(msg BootloaderReport) (err error) {
+	u.sndQueue <- msg
+	return nil
+}
+
+func (u *USBBootloaderDongle) ReceiveUSBReport(timeoutMillis int) (msg BootloaderReport, err error) {
+	ctx := context.Background()
+	if timeoutMillis > 0 {
+		ctxNew, cancel := context.WithTimeout(ctx, time.Duration(timeoutMillis)*time.Millisecond)
+		defer cancel()
+		ctx = ctxNew
+	}
+
+	select {
+	case rcv := <-u.rcvQueue:
+		msg = rcv
+	case <-ctx.Done():
+		err = errors.New("timeout reached")
+	}
+
+	return
+}
+
+func (u *USBBootloaderDongle) Close() {
+	fmt.Println("Closing Logitech Receiver in bootloader mode...")
+	if u.cancel != nil {
+		u.cancel()
+	}
+
+	if u.IfaceHID != nil {
+		u.IfaceHID.Close()
+	}
+
+	if u.Config != nil {
+		u.Config.Close()
+	}
+
+	if u.Dev != nil {
+		u.Dev.SetAutoDetach(false)
+		//u.Dev.Reset()
+		u.Dev.Close()
+	}
+
+	if u.UsbCtx != nil {
+		u.UsbCtx.Close()
+	}
+}
+
+func (u *USBBootloaderDongle) rcvLoop() {
+	buf := make([]byte, 32)
+
+	for {
+		n, err := u.EpInHid.ReadContext(u.ctx, buf)
+		if err != nil {
+			break
+		}
+
+		if u.showInOut {
+			fmt.Printf("\nIn : % x\n", buf[:n])
+		}
+
+		inMsg := BootloaderReport{}
+		inMsg.FromWire(buf[:n])
+		u.rcvQueue <- inMsg
+	}
+
+	close(u.rcvQueue)
+}
+
+func (u *USBBootloaderDongle) sndLoop() {
+Outer:
+	for {
+		select {
+		case <-u.ctx.Done():
+			break Outer
+		case outMsg := <-u.sndQueue:
+			outdata, err := outMsg.ToWire()
+			if err != nil {
+				fmt.Println("Error processing outbound HID++ message", err)
+			}
+
+			if u.showInOut {
+				fmt.Printf("Out: % 02x\n", outdata)
+			}
+			u.Dev.Control(
+				0x21,                              //bit7: Host to device, bit6..5: Class: 0x1, bit4..0: Interface: 0x01
+				0x09,                              //request: 0x09 SET_REPORT
+				0x0200|uint16(outdata[0]),         //Output: 0x02, Report ID: 0x10
+				uint16(u.IfaceHID.Setting.Number), //interface index 0x00
+				outdata,                           //payload
+			)
+		}
+	}
+
+	close(u.sndQueue)
+}
+
+func (u *USBBootloaderDongle) SetShowInOut(show bool) {
+	u.showInOut = show
+	return
+}
+
+func (u *USBBootloaderDongle) GetFirmwareMemoryInfo() (fwStartAddr, fwEndAddr, fwFlashWriteBufferSize uint16, err error) {
+	/*
+	GET_MEM_INFO = cmd 0x80
+
+	Request: python -c "import sys;sys.stdout.write('\x80\x00\x00\x1c' + '\x00'*28)" > /dev/hidraw2
+	Response: 8000 0006 0000 67ff 0200  (CU0007)
+						^---------------- firmware start addr
+							 ^----------- firmware end addr
+								  ^------ ???? RAM size ???
+
+	For CU0007 (Unifying)  : 0000 67ff 0200
+	For CU0008 (Unifying)  : 0400 6bff 0080
+	For CU0008 (G603)      : 0400 63ff 0080
+	For CU0012 (Unifying)  : 0400 63ff 0080
+	For CU0016 (R500)      : 0400 63ff 0080
+	For CU0016 (SPOTLIGHT) : 0400 63ff 0080
+
+	*/
+	reqMemInfo := BootloaderReport{Cmd: BOOTLOADER_COMMAND_GET_MEMORY_INFO, Addr: 0x0000, Len: 28}
+	u.SendUSBReport(reqMemInfo)
+	rsp, err := u.ReceiveUSBReport(20000)
+	//var fwStartAddr,fwEndAddr,fwFlashWriteBufSize uint16
+
+	if rsp.Cmd == 0x80 {
+		fwStartAddr = uint16(rsp.Data[0])<<8 + uint16(rsp.Data[1])
+		fwEndAddr = uint16(rsp.Data[2])<<8 + uint16(rsp.Data[3])
+		fwFlashWriteBufferSize = uint16(rsp.Data[4])<<8 + uint16(rsp.Data[5])
+		//fmt.Printf("GET_MEM_INFO result % 02x\n", rsp.Data[:rsp.Len])
+		fmt.Printf("\tFirmware start addr              : %#04x\n", fwStartAddr)
+		fmt.Printf("\tFirmware last addr                : %#04x\n", fwEndAddr)
+		fmt.Printf("\t(likely) Flash write buffer size : %#x\n", fwFlashWriteBufferSize)
+		return
+	} else {
+		err = errors.New("can not fetch 'firmware memory info' from receiver")
+		return
+	}
+
+}
+
+func (u *USBBootloaderDongle) EraseFlashTI() (err error) {
+	reqClearFlash := BootloaderReport{Cmd: BOOTLOADER_COMMAND_FLASH, Addr: 0x0000, Len: 1}
+	reqClearFlash.Data[0] = byte(BOOTLOADER_SUB_COMMAND_FLASH_ERASE_ALL)
+	u.SendUSBReport(reqClearFlash)
+	rspClearFlash, err := u.ReceiveUSBReport(5000)
+	if err == nil {
+		switch rspClearFlash.Cmd {
+		case BOOTLOADER_COMMAND_FLASH:
+			fmt.Printf("Flash erase flash succeeded - %s\n", rspClearFlash.String())
+			return
+		default:
+			return errors.New(fmt.Sprintf("error erasing dongle flash, unknown response command %02x", byte(rspClearFlash.Cmd)))
+		}
+	} else {
+		return errors.New("Error erasing flash")
+	}
+}
+
+func (u *USBBootloaderDongle) ClearRAMBufferTI() (err error) {
+	req := BootloaderReport{Cmd: BOOTLOADER_COMMAND_FLASH, Addr: 0x0000, Len: 1}
+	req.Data[0] = byte(BOOTLOADER_SUB_COMMAND_FLASH_CLEAR_RAM_BUFFER)
+	u.SendUSBReport(req)
+	rsp, err := u.ReceiveUSBReport(500)
+	if err == nil {
+		switch rsp.Cmd {
+		case BOOTLOADER_COMMAND_FLASH:
+			fmt.Printf("Clearing RAM BUFFER succeeded - %s\n", rsp.String())
+			return
+		default:
+			return errors.New(fmt.Sprintf("Error clearing RAM buffer, unknown response command %02x", byte(rsp.Cmd)))
+		}
+	} else {
+		return errors.New("failed clearing RAM buffer")
+	}
+}
+
+func (u *USBBootloaderDongle) WriteFirmwareSliceToRAMBufferTI(ramBufAddr uint16, firmwareSlice []byte) (err error) {
+	if (firmwareSlice == nil || len(firmwareSlice) != 16) {
+		return errors.New("firmware slice has incorrect size for RAM buffer write, has to be 16 bytes")
+	}
+
+	// Write to RAM buffer
+	reqWriteToRamBuffer := BootloaderReport{Cmd: BOOTLOADER_COMMAND_WRITE_TO_RAM_BUFFER, Addr: ramBufAddr, Len: 16}
+	copy(reqWriteToRamBuffer.Data[:], firmwareSlice)
+	u.SendUSBReport(reqWriteToRamBuffer)
+	rspWriteToRamBuffer, err := u.ReceiveUSBReport(500)
+
+	if err == nil {
+		switch rspWriteToRamBuffer.Cmd {
+		case BOOTLOADER_COMMAND_WRITE_TO_RAM_BUFFER:
+			fmt.Printf("Write to RAM buffer succeeded - %s\n", rspWriteToRamBuffer.String())
+			return
+		case BOOTLOADER_COMMAND_WRITE_TO_RAM_BUFFER_INVALID_ADDR:
+			return errors.New(fmt.Sprintf("error writing RAM buffer: invalid RAM buffer address %04x", ramBufAddr))
+		case BOOTLOADER_COMMAND_WRITE_TO_RAM_BUFFER_OVERFLOW:
+			return errors.New("error writing RAM buffer, RAM buffer overflow")
+		default:
+			return errors.New(fmt.Sprintf("error writing RAM buffer: unknown response command %02x", byte(rspWriteToRamBuffer.Cmd)))
+		}
+	} else {
+		return errors.New("error writing RAM buffer")
+	}
+}
+
+func (u *USBBootloaderDongle) WriteSignatureSliceTI(signatureAddr uint16, signatureSlice []byte) (err error) {
+	if (signatureSlice == nil || len(signatureSlice) != 16) {
+		return errors.New("signature slice has incorrect size, has to be 16 bytes")
+	}
+
+	if (signatureAddr > 0xff) {
+		return errors.New("invalid write address for signature")
+	}
+
+	reqWriteSignatureChunk := BootloaderReport{Cmd: BOOTLOADER_COMMAND_FLASH_WRITE_SIGNATURE, Addr: signatureAddr, Len: 16}
+	copy(reqWriteSignatureChunk.Data[:], signatureSlice)
+	u.SendUSBReport(reqWriteSignatureChunk)
+	rspWriteSignatureChunk, err := u.ReceiveUSBReport(500)
+	if err == nil {
+		switch rspWriteSignatureChunk.Cmd {
+		case BOOTLOADER_COMMAND_FLASH_WRITE_SIGNATURE:
+			fmt.Printf("Write signature at %04x succeeded - %s\n", signatureAddr, rspWriteSignatureChunk.String())
+		return
+		default:
+			return errors.New(fmt.Sprintf("Error writing signature at %04x, error code %02x", signatureAddr, byte(rspWriteSignatureChunk.Cmd)))
+		}
+	} else {
+		return errors.New(fmt.Sprintf("Error writing signature at %04x", signatureAddr))
+	}
+}
+
+func (u *USBBootloaderDongle) ReadSignatureSliceTI(signatureAddr uint16, len byte) (err error) {
+
+	req := BootloaderReport{Cmd: BOOTLOADER_COMMAND_FLASH_READ_SIGNATURE, Addr: signatureAddr, Len: len}
+
+	u.SendUSBReport(req)
+	rsp, err := u.ReceiveUSBReport(500)
+	if err == nil {
+		switch rsp.Cmd {
+		case BOOTLOADER_COMMAND_FLASH_READ_SIGNATURE:
+			fmt.Printf("read signature at %04x succeeded - %s\n", signatureAddr, rsp.String())
+			return
+		default:
+			return errors.New(fmt.Sprintf("error reading signature at %04x, error code %02x", signatureAddr, byte(rsp.Cmd)))
+		}
+	} else {
+		return errors.New(fmt.Sprintf("error reading signature at %04x", signatureAddr))
+	}
+}
+
+func (u *USBBootloaderDongle) GenericCommandTI(cmd BootloaderCommand, addr uint16, data[]byte) (err error) {
+	if len(data) > 28 {
+		return errors.New("error: data must not be larger than 28 bytes")
+	}
+
+	req := BootloaderReport{Cmd: cmd, Addr: addr, Len: byte(len(data))}
+	copy(req.Data[:], data)
+
+	u.SendUSBReport(req)
+	rsp, err := u.ReceiveUSBReport(500)
+	if err == nil {
+		switch {
+		case rsp.Cmd != 0x01:
+			fmt.Printf("request: %s\n", req.String())
+			fmt.Printf("command %02x succeeded - %s\n", byte(cmd), rsp.String())
+			return
+		default:
+			return errors.New(fmt.Sprintf("error command failed error code %02x", byte(rsp.Cmd)))
+		}
+	} else {
+		return errors.New("command failed")
+	}
+}
+
+func (u *USBBootloaderDongle) StoreRAMBufferToFlashAddrTI(FlashAddr uint16) (err error) {
+	reqStoreRamBufferToFlash := BootloaderReport{Cmd: BOOTLOADER_COMMAND_FLASH, Addr: FlashAddr, Len: 1}
+	reqStoreRamBufferToFlash.Data[0] = byte(BOOTLOADER_SUB_COMMAND_FLASH_WRITE_RAM_BUFFER);
+	u.SendUSBReport(reqStoreRamBufferToFlash)
+	rspStoreRamBufferToFlash, err := u.ReceiveUSBReport(500)
+	if err == nil {
+		switch rspStoreRamBufferToFlash.Cmd {
+		case BOOTLOADER_COMMAND_FLASH:
+			fmt.Printf("Store RAM buffer to flash at %04x succeeded - %s\n", FlashAddr, rspStoreRamBufferToFlash.String())
+			return
+		default:
+			return errors.New(fmt.Sprintf("Error storing RAM buffer to flash at addr %04x, unknown response command %02x", FlashAddr, byte(rspStoreRamBufferToFlash.Cmd)))
+		}
+	} else {
+		return errors.New(fmt.Sprintf("Error storing RAM buffer to flash at addr %04x", FlashAddr))
+	}
+}
+
+func (u *USBBootloaderDongle) CheckFirmwareCrcAndSignatureTI() (err error) {
+	reqCheckFlashCRC := BootloaderReport{Cmd: BOOTLOADER_COMMAND_FLASH, Addr: 0, Len: 1}
+	reqCheckFlashCRC.Data[0] = byte(BOOTLOADER_SUB_COMMAND_FLASH_CHECK_CRC);
+	u.SendUSBReport(reqCheckFlashCRC)
+	rspCheckFlashCRC, err := u.ReceiveUSBReport(20000) // takes long, thus we give 20 seconds
+	if err == nil {
+		switch rspCheckFlashCRC.Cmd {
+		case BOOTLOADER_COMMAND_FLASH:
+			fmt.Printf("Flash CRC check succeeded - %s\n", rspCheckFlashCRC.String())
+			return
+		default:
+			return errors.New(fmt.Sprintf("flash CRC check failed %02x\n", byte(rspCheckFlashCRC.Cmd)))
+			return
+		}
+	} else {
+		return errors.New("error: calling flash CRC and signature check failed")
+	}
+}
+
+func (u *USBBootloaderDongle) GetBLVersionString() (versionString string, maj, min, build uint16, err error) {
+	req := BootloaderReport{Cmd: BOOTLOADER_COMMAND_GET_BOOTLOADER_VERSION_STRING, Addr: 0x0000, Len: 28}
+	u.SendUSBReport(req)
+	rsp, err := u.ReceiveUSBReport(20000)
+	//var fwStartAddr,fwEndAddr,fwFlashWriteBufSize uint16
+
+	if rsp.Cmd == BOOTLOADER_COMMAND_GET_BOOTLOADER_VERSION_STRING {
+		versionString = string(rsp.Data[:rsp.Len])
+		fmt.Printf("Bootloader version string: %s\n", versionString)
+		//parse to ints
+
+		_, err = fmt.Sscanf(versionString, "BOT%02x.%02x_B%04x", &maj, &min, &build)
+		if err != nil {
+			err = errors.New("failed to parse bootloader version string")
+			return
+		}
+
+		fmt.Printf("Bootloader version parsed: Major %02x Minor %02x Build %04x\n", maj, min, build)
+		return
+	} else {
+		err = errors.New("can not fetch 'version string' from receiver")
+		return
+	}
+
+}
+
+func NewUSBBootloaderDongle() (res *USBBootloaderDongle, err error) {
+	res = &USBBootloaderDongle{}
+	res.showInOut = true
+
+	res.UsbCtx = gousb.NewContext()
+
+	if res.Dev, err = res.UsbCtx.OpenDeviceWithVIDPID(VID, PID_BOOT_LOADER_LIGHTSPEED_G603); err == nil && res.Dev != nil {
+		fmt.Println("Found Logitech LIGHTSPEED receiver in bootloader mode")
+	} else if res.Dev, err = res.UsbCtx.OpenDeviceWithVIDPID(VID, PID_BOOT_LOADER_NORDIC); err == nil && res.Dev != nil {
+		fmt.Println("Found Unifying receiver with Nordic chip in bootloader mode")
+	} else if res.Dev, err = res.UsbCtx.OpenDeviceWithVIDPID(VID, PID_BOOT_LOADER_TI); err == nil && res.Dev != nil {
+		fmt.Println("Found Unifying receiver with Texas Instruments chip in bootloader mode")
+	} else if res.Dev, err = res.UsbCtx.OpenDeviceWithVIDPID(VID, PID_BOOT_LOADER_TI_NANO); err == nil && res.Dev != nil {
+		fmt.Println("Found Unifying Nano receiver with Texas Instruments chip in bootloader mode")
+	} else if res.Dev, err = res.UsbCtx.OpenDeviceWithVIDPID(VID, PID_BOOT_LOADER_TI_R500); err == nil && res.Dev != nil {
+		fmt.Println("Found presentation clicker receiver (R500) with Texas Instruments chip in bootloader mode")
+	} else if res.Dev, err = res.UsbCtx.OpenDeviceWithVIDPID(VID, PID_BOOT_LOADER_TI_SPOTLIGHT); err == nil && res.Dev != nil {
+		fmt.Println("Found presentation clicker receiver (SPOTLIGHT) with Texas Instruments chip in bootloader mode")
+	} else if res.Dev, err = res.UsbCtx.OpenDeviceWithVIDPID(VID, PID_CU0016_R500); err == nil && res.Dev != nil {
+		fmt.Println("Found CU0016 Dongle for R500 presentation clicker")
+	} else {
+		res.Close()
+		log.Fatal("No known dongle found")
+
+		return nil, eNoDongle
+	}
+
+	//Get device config 1
+	res.Config, err = res.Dev.Config(1)
+	if err != nil {
+		res.Close()
+		return nil, errors.New("Couldn't retrieve config 1 of LocalUSBDongle dongle")
+	}
+
+	//fmt.Println("Using dongle USB config:", res.Config.Desc.String())
+
+	fmt.Println("... will be detached from Kernel, to avoid interference from other software")
+	res.Dev.SetAutoDetach(true)
+	res.Dev.Reset()
+
+Outer:
+	for _, ifaceDesc := range res.Config.Desc.Interfaces {
+		for _, ifaceSettings := range ifaceDesc.AltSettings {
+			//fmt.Printf("%+v\n", ifaceSettings.Endpoints)
+			for _, epDesc := range ifaceSettings.Endpoints {
+				//fmt.Printf("EP descr: %+v\n", epDesc.String())
+				if epDesc.MaxPacketSize == 32 && epDesc.Direction == gousb.EndpointDirectionIn {
+					// This is the HID++ EP
+					//fmt.Printf("EP %+v\n", epDesc.Number)
+					res.IfaceHID, err = res.Config.Interface(ifaceSettings.Number, ifaceSettings.Alternate)
+					if err != nil {
+						res.Close()
+						return nil, errors.New(fmt.Sprintf("Couldn't access HID USB interface: %v", err))
+					} else {
+						fmt.Println("... accessing receiver on HID interface:", res.IfaceHID.String())
+					}
+
+					res.EpInHid, err = res.IfaceHID.InEndpoint(epDesc.Number)
+					if err != nil {
+						res.Close()
+						return nil, errors.New("Couldn't access HID USB interface IN endpoint")
+					} else {
+						//fmt.Println("HID interface IN endpoint:", res.EpInHid.String())
+						break Outer
+					}
+				}
+			}
+		}
+	}
+
+	if res.EpInHid == nil {
+		res.Close()
+		return nil, errors.New("Couldn't find EP for HID++ input reports")
+	}
+
+	res.sndQueue = make(chan BootloaderReport)
+	res.rcvQueue = make(chan BootloaderReport)
 
 	res.ctx, res.cancel = context.WithCancel(context.Background())
 

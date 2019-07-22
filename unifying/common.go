@@ -9,6 +9,34 @@ import (
 	"time"
 )
 
+type FirmwareMajor byte
+
+const (
+	FIRMWARE_MAJOR_UNIFYING_NORDIC      FirmwareMajor = 0x12
+	FIRMWARE_MAJOR_UNIFYING_TI          FirmwareMajor = 0x24
+	FIRMWARE_MAJOR_LIGHTSPEED_TI        FirmwareMajor = 0x39
+	FIRMWARE_MAJOR_SPOTLIGHT_CLICKER_TI FirmwareMajor = 0x41
+	FIRMWARE_MAJOR_R500_CLICKER_TI      FirmwareMajor = 0x45
+)
+
+func (fm FirmwareMajor) String() string {
+	switch fm {
+	case FIRMWARE_MAJOR_UNIFYING_NORDIC:
+		return "Unifying receiver firmware (Nordic nRF24)"
+	case FIRMWARE_MAJOR_UNIFYING_TI:
+		return "Unifying receiver firmware (Texas Instruments CC25xx)"
+	case FIRMWARE_MAJOR_LIGHTSPEED_TI:
+		return "Lightspeed receiver (Texas Instruments CC25xx)"
+	case FIRMWARE_MAJOR_SPOTLIGHT_CLICKER_TI:
+		return "SPOTLIGHT Presentation Clicker receiver firmware(Texas Instruments CC25xx)"
+	case FIRMWARE_MAJOR_R500_CLICKER_TI:
+		return "R500 Presentation Clicker receiver firmware (Texas Instruments CC25xx)"
+	default:
+		return fmt.Sprintf("Unknown receiver type for firmware major version %02x", byte(fm))
+	}
+
+}
+
 type DeviceType byte
 
 const (
@@ -20,8 +48,8 @@ const (
 	DEVICE_TYPE_REMOTE    DeviceType = 0x07
 	DEVICE_TYPE_TRACKBALL DeviceType = 0x08
 	DEVICE_TYPE_TOUCHPAD  DeviceType = 0x09
-	DEVICE_TYPE_TABLET  DeviceType = 0x0a
-	DEVICE_TYPE_GAMEPAD  DeviceType = 0x0b
+	DEVICE_TYPE_TABLET    DeviceType = 0x0a
+	DEVICE_TYPE_GAMEPAD   DeviceType = 0x0b
 	DEVICE_TYPE_JOYSTICK  DeviceType = 0x0c
 )
 
@@ -106,7 +134,6 @@ func (ui UsabilityInfo) String() string {
 	}
 }
 
-
 type LogitechDeviceCapabilities byte
 
 const (
@@ -134,7 +161,6 @@ func (caps LogitechDeviceCapabilities) String() (res string) {
 
 	return res
 }
-
 
 type ReportTypes uint32
 
@@ -219,7 +245,7 @@ type DeviceInfo struct {
 	DefaultReportInterval time.Duration
 	WPID                  []byte
 	DeviceType            DeviceType
-	Caps				LogitechDeviceCapabilities
+	Caps                  LogitechDeviceCapabilities
 	Serial                []byte
 	RFAddr                []byte
 	ReportTypes           ReportTypes

@@ -101,7 +101,7 @@ func mainold() {
 /*
 	// Request dongle firmware version from firmware register
 	fmt.Println("!!!Request dongle firmware version from firmware register")
-	responses, err := usb.HIDPP_SendAndCollectResponses(0xff, HIDPP_MSG_ID_GET_REGISTER_REQ, []byte{byte(DONGLE_HIDPP_REGISTER_FIRMWARE), 0x01, 0x00})
+	responses, err := usb.HIDPP_SendAndCollectResponses(0xff, HIDPP_MSG_ID_GET_REGISTER_REQ, []byte{byte(DONGLE_HIDPP_REGISTER_FIRMWARE_INFO), 0x01, 0x00})
 	for _, r := range responses {
 		fmt.Println(r.String())
 	}
@@ -109,7 +109,7 @@ func mainold() {
 
 	// Request dongle firmware build version from firmware register
 	fmt.Println("!!!Request dongle firmware build version from firmware register")
-	responses, err = usb.HIDPP_SendAndCollectResponses(0xff, HIDPP_MSG_ID_GET_REGISTER_REQ, []byte{byte(DONGLE_HIDPP_REGISTER_FIRMWARE), 0x02, 0x00})
+	responses, err = usb.HIDPP_SendAndCollectResponses(0xff, HIDPP_MSG_ID_GET_REGISTER_REQ, []byte{byte(DONGLE_HIDPP_REGISTER_FIRMWARE_INFO), 0x02, 0x00})
 	for _, r := range responses {
 		fmt.Println(r.String())
 	}
@@ -117,7 +117,7 @@ func mainold() {
 
 	// Request dongle bootloader version from firmware register
 	fmt.Println("!!!Request dongle bootloader version from firmware register")
-	responses, err = usb.HIDPP_SendAndCollectResponses(0xff, HIDPP_MSG_ID_GET_REGISTER_REQ, []byte{byte(DONGLE_HIDPP_REGISTER_FIRMWARE), 0x04, 0x00})
+	responses, err = usb.HIDPP_SendAndCollectResponses(0xff, HIDPP_MSG_ID_GET_REGISTER_REQ, []byte{byte(DONGLE_HIDPP_REGISTER_FIRMWARE_INFO), 0x04, 0x00})
 	for _, r := range responses {
 		fmt.Println(r.String())
 	}
