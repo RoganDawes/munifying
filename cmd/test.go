@@ -26,10 +26,15 @@ import (
 )
 func Test() {
 	//read in firmware file
-	fw_file := "/root/jacking/firmware/RQR39.03_B0035_fake.bin"
+	//fw_file := "/root/jacking/firmware/RQR39.03_B0035_fake.bin"
 	//fw_file := "/root/jacking/firmware/RQR39.04_B0036_G603.bin"
-	//fw_file := "/root/jacking/firmware/RQR24.03_B0027.bin"
+	//fw_file := "/root/jacking/firmware/RQR41.00_B0004_SPOTLIGHT.bin"
 	//fw_file := "/root/jacking/firmware/RQR24.07_B0030.bin"
+
+	//fw_file := "/root/jacking/firmware/RQR24.06_B0030.bin"
+	fw_file := "/root/jacking/firmware/RQR39.04_B0036_G603_patch_for_BOT03.01.bin"
+
+
 	fw_sig_file := "/root/jacking/firmware/RQR24.07_B0030_sig.bin"
 
 
@@ -198,6 +203,7 @@ func FlashTIReceiver(firmware * unifying.Firmware) (err error) {
 	}
 
 	fmt.Println("Firmware flashing SUCCEEDED")
+	usbReceiverBL.Reboot()
 	return nil
 }
 

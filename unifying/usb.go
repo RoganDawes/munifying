@@ -746,7 +746,7 @@ func (u *LocalUSBDongle) DumpFlashByte(addr uint16) (res byte, err error) {
 
 func (u *LocalUSBDongle) DumpRawKeyData(devID byte) (res []byte, err error) {
 	//find flash page with device data
-	flashPagesToConsider := []uint16{0xe400, 0xe800, 0xec00}
+	flashPagesToConsider := []uint16{0xe400, 0xe800, 0xec00, 0xf000} //0xe400, 0xe800 for <=BOT3.01; 0xec00, 0xf000 for >=BOT3.02;
 
 	activePageAddr := uint16(0)
 	for _, pageAddr := range flashPagesToConsider {
@@ -1045,6 +1045,12 @@ func (u *USBBootloaderDongle) GetFirmwareMemoryInfo() (fwStartAddr, fwEndAddr, f
 		return
 	}
 
+}
+
+func (u *USBBootloaderDongle) Reboot() (err error) {
+	reqClearFlash := BootloaderReport{Cmd: BOOTLOADER_COMMAND_REBOOT, Addr: 0x0000, Len: 0}
+	u.SendUSBReport(reqClearFlash)
+	return
 }
 
 func (u *USBBootloaderDongle) EraseFlashTI() (err error) {
