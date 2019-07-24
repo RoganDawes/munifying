@@ -25,7 +25,9 @@ import (
 func ListDongleInfo() {
 	usb, err := unifying.NewLocalUSBDongle()
 	if err != nil {
-		panic(err)
+		fmt.Printf("ERROR: %v\n", err)
+		return
+
 	}
 	defer usb.Close()
 

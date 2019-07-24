@@ -1103,7 +1103,7 @@ func (u *USBBootloaderDongle) WriteFirmwareSliceToRAMBufferTI(ramBufAddr uint16,
 	if err == nil {
 		switch rspWriteToRamBuffer.Cmd {
 		case BOOTLOADER_COMMAND_WRITE_TO_RAM_BUFFER:
-			fmt.Printf("Write to RAM buffer succeeded - %s\n", rspWriteToRamBuffer.String())
+			//fmt.Printf("Write to RAM buffer succeeded - %s\n", rspWriteToRamBuffer.String())
 			return
 		case BOOTLOADER_COMMAND_WRITE_TO_RAM_BUFFER_INVALID_ADDR:
 			return errors.New(fmt.Sprintf("error writing RAM buffer: invalid RAM buffer address %04x", ramBufAddr))

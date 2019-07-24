@@ -27,12 +27,13 @@ import (
 func Test() {
 	//read in firmware file
 	//fw_file := "/root/jacking/firmware/RQR39.03_B0035_fake.bin"
-	//fw_file := "/root/jacking/firmware/RQR39.04_B0036_G603.bin"
+	fw_file := "/root/jacking/firmware/RQR39.04_B0036_G603.bin"
 	//fw_file := "/root/jacking/firmware/RQR41.00_B0004_SPOTLIGHT.bin"
+	//fw_file := "/root/jacking/firmware/RQR45.00_B0002_R500.bin"
 	//fw_file := "/root/jacking/firmware/RQR24.07_B0030.bin"
 
 	//fw_file := "/root/jacking/firmware/RQR24.06_B0030.bin"
-	fw_file := "/root/jacking/firmware/RQR39.04_B0036_G603_patch_for_BOT03.01.bin"
+	//fw_file := "/root/jacking/firmware/RQR39.04_B0036_G603_patch_for_BOT03.01.bin"
 
 
 	fw_sig_file := "/root/jacking/firmware/RQR24.07_B0030_sig.bin"
@@ -55,9 +56,18 @@ func Test() {
 
 	fmt.Println(firmware.String())
 
+/*
+	fw_patched,_ := firmware.BaseImageDowngradeFromBL0302ToBL0301()
+	fmt.Printf("%02x\n", fw_patched)
+	prefix := make([]byte,0x400)
+	fw_patched = append(prefix, fw_patched...)
+	ioutil.WriteFile("test.raw", fw_patched, os.FileMode(440))
+	return
+*/
 	err = FlashTIReceiver(firmware)
 	if err != nil {
-		log.Panic(err)
+		fmt.Printf("ERROR: %v\n", err)
+		return
 	}
 }
 
@@ -112,7 +122,7 @@ func FlashTIReceiver(firmware * unifying.Firmware) (err error) {
 		signature_required = true
 
 		if !firmware.HasSignature {
-			return errors.New("provided firmware has no signature, but the bootloader requires one")
+			return errors.New("provided firmware has no signature, but the bootloader requires one.")
 		}
 	}
 
@@ -130,18 +140,26 @@ func FlashTIReceiver(firmware * unifying.Firmware) (err error) {
 	}
 
 	intended_fw_size := fwEndAddr - fwStartAddr + 1
-	if firmware.Size != intended_fw_size {
-		fmt.Println("provided firmware file has wrong size, trying to resize")
+	if intended_fw_size != firmware.Size {
+		if firmware.Size == 0x6000 && intended_fw_size == 0x6800 && BLmaj <= 3 && BLmin <= 1 {
+			fmt.Println("According to the size, the provided firmware seems to be build for a Bootloader version >= 03.02 (signed)")
+			fmt.Println("Target receiver's Bootloader version is <=03.01 (unsigned), try to create a downgraded firmware...")
 
-		if (signature_required) {
-			return errors.New("can not resize the firmware without invalidating the signature, aborting...")
+			fmt.Println("provided firmware file has wrong size, trying to resize")
+
+			if (signature_required) {
+				return errors.New("can not resize the firmware without invalidating the signature, aborting...")
+			}
+
+			//grow firmware to needed size
+			fwbytes, err = firmware.BaseImageDowngradeFromBL0302ToBL0301()
+			if err != nil {
+				return errors.New(fmt.Sprintf("failed to resize firmware: %v\n", err))
+			}
+		} else {
+			return errors.New("Firmware doesn't match target bootloader's memory layout and can not be patched")
 		}
 
-		//grow firmware to needed size
-		fwbytes, err = firmware.BaseImageResized(intended_fw_size)
-		if err != nil {
-			return errors.New(fmt.Sprintf("failed to resize firmware: %v\n", err))
-		}
 	}
 
 	//erase flash
