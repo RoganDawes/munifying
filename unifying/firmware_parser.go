@@ -248,11 +248,11 @@ func (f *Firmware) ParseFirmwareNordic() (err error) {
 		fmt.Println("...firmware blob has no bootloader appended")
 	}
 
-	// do first CRC check asuming that fw size is 6400 (for signed BL 01.04+)
 
-	// extract CRC
-
-	//fmt.Printf("!!!CRC16 %#04x\n", crc16.Checksum(f.RawData[0x0A:0x6400], crc16.MakeTable(crc16.CRC16_CCITT_FALSE)))
+	var crc_calc uint16
+	if len(f.RawData) < 0x6400 {
+		goto invalid_crc
+	}
 
 	// check CRC, assuming image size 0x6400
 	f.StartOffset = 0x0000
@@ -260,19 +260,15 @@ func (f *Firmware) ParseFirmwareNordic() (err error) {
 	f.Size = 0x6400
 	f.CRC = uint16(f.RawData[f.Size-2])<<8 | uint16(f.RawData[f.Size-1])
 
-	for i:= uint16(0x6000); i<f.Size;i++ {
-		crc16 := crc16.Checksum(f.RawData[:i], crc16.MakeTable(crc16.CRC16_CCITT_FALSE))
-		if crc16 == f.CRC {
-			fmt.Printf("assumed code end at at %#x\n", i)
-			//check if remaining data are all 0x00
-			for _,val := range f.RawData[i:f.Size-2] {
-				if val != 0x00 {
-					return errors.New("CRC error")
-				}
-			}
-			fmt.Printf("...firmware CRC correct: %04x\n", crc16)
-			return nil
-		}
+
+	crc_calc = crc16.Checksum(f.RawData[:f.Size-2], crc16.MakeTable(crc16.CRC16_CCITT_FALSE))
+	if crc_calc == f.CRC {
+		fmt.Printf("...firmware CRC correct: %04x\n", crc_calc)
+		return nil
+	}
+
+	if len(f.RawData) < 0x6800 {
+		goto invalid_crc
 	}
 
 	// repeat CRC check, assuming image size 0x6800
@@ -281,22 +277,13 @@ func (f *Firmware) ParseFirmwareNordic() (err error) {
 	f.Size = 0x6800
 	f.CRC = uint16(f.RawData[f.Size-2])<<8 | uint16(f.RawData[f.Size-1])
 
-	for i:= uint16(0x6000); i<f.Size;i++ {
-		crc16 := crc16.Checksum(f.RawData[:i], crc16.MakeTable(crc16.CRC16_CCITT_FALSE))
-		if crc16 == f.CRC {
-			fmt.Printf("assumed code end at %#x\n", i)
-			//check if remaining data are all 0x00
-			for _,val := range f.RawData[i:f.Size-2] {
-				if val != 0x00 {
-					return errors.New("CRC error")
-				}
-			}
-			fmt.Printf("...firmware CRC correct: %04x\n", crc16)
-			return nil
-		}
+	crc_calc = crc16.Checksum(f.RawData[:f.Size-2], crc16.MakeTable(crc16.CRC16_CCITT_FALSE))
+	if crc_calc == f.CRC {
+		fmt.Printf("...firmware CRC correct: %04x\n", crc_calc)
+		return nil
 	}
 
-
+invalid_crc:
 	return errors.New("No valid firmware image")
 }
 

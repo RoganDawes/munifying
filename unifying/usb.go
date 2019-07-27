@@ -1585,7 +1585,7 @@ func (u *USBBootloaderDongle) FlashReceiverNordic(firmware *Firmware) (err error
 		return err
 	}
 	*/
-	fmt.Println("Writing reset vector...")
+	fmt.Println("Writing first byte, to init CRC check - don't unplug!! ...")
 	err = u.WriteFirmwareSliceToFlashNordic(0x0000, fwbytes[0:1])
 	if err != nil {
 		return err

@@ -31,8 +31,10 @@ func Test() {
 	//fw_file := "/root/jacking/firmware/RQR45.00_B0002_R500.bin"
 	//fw_file := "/root/jacking/firmware/RQR24.07_B0030.bin"
 
-	fw_file := "/root/jacking/firmware/RQR12.09_B0030.bin"
+	fw_file := "/root/jacking/firmware/RQR12.01_B0019_dump.raw"
+	//fw_file := "/root/jacking/firmware/RQR12.09_B0030.bin"
 	//fw_file := "/root/jacking/firmware/RQR12.07_B0029.bin"
+	//fw_file := "/root/jacking/firmware/RQR12.05_B0028.bin"
 
 	//fw_file := "/root/jacking/firmware/RQR24.06_B0030.bin"
 	//fw_file := "/root/jacking/firmware/RQR39.04_B0036_G603_patch_for_BOT03.01.bin"
