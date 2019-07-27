@@ -16,7 +16,6 @@
 package cmd
 
 import (
-	"errors"
 	"fmt"
 	"github.com/mame82/munifying/unifying"
 	"github.com/spf13/cobra"
@@ -27,20 +26,30 @@ import (
 func Test() {
 	//read in firmware file
 	//fw_file := "/root/jacking/firmware/RQR39.03_B0035_fake.bin"
-	fw_file := "/root/jacking/firmware/RQR39.04_B0036_G603.bin"
+	//fw_file := "/root/jacking/firmware/RQR39.04_B0036_G603.bin"
 	//fw_file := "/root/jacking/firmware/RQR41.00_B0004_SPOTLIGHT.bin"
 	//fw_file := "/root/jacking/firmware/RQR45.00_B0002_R500.bin"
 	//fw_file := "/root/jacking/firmware/RQR24.07_B0030.bin"
+
+	fw_file := "/root/jacking/firmware/RQR12.09_B0030.bin"
+	//fw_file := "/root/jacking/firmware/RQR12.07_B0029.bin"
 
 	//fw_file := "/root/jacking/firmware/RQR24.06_B0030.bin"
 	//fw_file := "/root/jacking/firmware/RQR39.04_B0036_G603_patch_for_BOT03.01.bin"
 
 
-	fw_sig_file := "/root/jacking/firmware/RQR24.07_B0030_sig.bin"
+	//fw_sig_file := "/root/jacking/firmware/RQR24.07_B0030_sig.bin"
+	fw_sig_file := "/root/jacking/firmware/RQR12.09_B0030_sig.bin"
+
+	fw_bin, err := ioutil.ReadFile(fw_file)
+	if err != nil {
+		fmt.Printf("error reading firmware file: %v", err)
+	} else {
+		fmt.Printf("Opened firmware blob '%s'\n", fw_file)
+	}
 
 
-
-	firmware, err := unifying.ParseFirmware(fw_file)
+	firmware, err := unifying.ParseFirmwareBin(fw_bin)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -64,27 +73,28 @@ func Test() {
 	ioutil.WriteFile("test.raw", fw_patched, os.FileMode(440))
 	return
 */
-	err = FlashTIReceiver(firmware)
-	if err != nil {
-		fmt.Printf("ERROR: %v\n", err)
-		return
-	}
-}
 
-func FlashTIReceiver(firmware * unifying.Firmware) (err error) {
+	// Access receiver to obtain info on running firmware and reset to bootloader mode
 	usbReceiver, err := unifying.NewLocalUSBDongle()
 	if err != nil {
 		fmt.Println(err)
 	} else {
 		defer usbReceiver.Close()
-		usbReceiver.SetShowInOut(true)
+		usbReceiver.SetShowInOut(false)
 		fwMaj, _, err := usbReceiver.GetReceiverFirmwareMajorMinorVersion()
 		if err != nil {
 			log.Fatal(err)
 		}
 
+
 		if fwMaj == 0x12 {
-			return errors.New("dongle has a Nordic chip, thus can not be flashed with this tool")
+			fmt.Println("Receiver is running a Nordic firmware")
+			//return errors.New("dongle has a Nordic chip, thus can not be flashed with this tool")
+		} else if fwMaj == 0x24 {
+			fmt.Println("Receiver is running a Texas Instruments firmware")
+			//return errors.New("dongle has a Nordic chip, thus can not be flashed with this tool")
+		} else {
+			fmt.Printf("Receiver is running a firmware with uknown major version %#02x\n")
 		}
 
 		usbReceiver.GetReceiverFirmwareBuildVersion()
@@ -92,138 +102,35 @@ func FlashTIReceiver(firmware * unifying.Firmware) (err error) {
 		fmt.Println("Try to reset dongle into bootloader mode ...")
 		usbReceiver.SwitchToBootloader()
 
+
 		fmt.Println("... try to re-open dongle in bootloader mode in 5 seconds...")
-		time.Sleep(time.Second * 2)
+		time.Sleep(time.Second * 3)
 
 	}
 
-	signature_required := false
 
-
+	//Try to open receiver in bootloader mode
 	usbReceiverBL, err := unifying.NewUSBBootloaderDongle()
 	if err != nil {
-		return err
+		fmt.Printf("can not open receiver in bootloader mode: %v\n", err)
+		return
 	} else {
 		defer usbReceiverBL.Close()
 	}
 	usbReceiverBL.SetShowInOut(false)
 
 
-	_,BLmaj,BLmin,_,err := usbReceiverBL.GetBLVersionString()
+
+
+	err = usbReceiverBL.FlashReceiver(firmware)
 	if err != nil {
-		log.Fatal(err)
+		fmt.Printf("ERROR: %v\n", err)
+		return
+	} else {
+		usbReceiverBL.Reboot()
 	}
-	if BLmaj != 0x03 {
-		return errors.New("bootloader major version hints that this is not a Texas Instruments CC2544 based Logitech dongle")
-	}
-
-	if BLmaj >= 3 && BLmin > 2 {
-		fmt.Println("CAUTION: According to bootloader version, only signed firmwares are accepted!")
-		signature_required = true
-
-		if !firmware.HasSignature {
-			return errors.New("provided firmware has no signature, but the bootloader requires one.")
-		}
-	}
-
-
-	fmt.Println("Retrieving firmware memory info from bootloader...")
-	fwStartAddr, fwEndAddr, fwFlashWriteBufSize, err := usbReceiverBL.GetFirmwareMemoryInfo()
-	if err != nil {
-		return err
-	}
-
-	fwbytes, err := firmware.BaseImage()
-	if err != nil {
-		return errors.New(fmt.Sprintf("error fetching firmware base image: %v", err))
-
-	}
-
-	intended_fw_size := fwEndAddr - fwStartAddr + 1
-	if intended_fw_size != firmware.Size {
-		if firmware.Size == 0x6000 && intended_fw_size == 0x6800 && BLmaj <= 3 && BLmin <= 1 {
-			fmt.Println("According to the size, the provided firmware seems to be build for a Bootloader version >= 03.02 (signed)")
-			fmt.Println("Target receiver's Bootloader version is <=03.01 (unsigned), try to create a downgraded firmware...")
-
-			fmt.Println("provided firmware file has wrong size, trying to resize")
-
-			if (signature_required) {
-				return errors.New("can not resize the firmware without invalidating the signature, aborting...")
-			}
-
-			//grow firmware to needed size
-			fwbytes, err = firmware.BaseImageDowngradeFromBL0302ToBL0301()
-			if err != nil {
-				return errors.New(fmt.Sprintf("failed to resize firmware: %v\n", err))
-			}
-		} else {
-			return errors.New("Firmware doesn't match target bootloader's memory layout and can not be patched")
-		}
-
-	}
-
-	//erase flash
-	//ToDo: let user decide to continue
-	fmt.Println("Erasing dongle flash: CAUTION the dongle will not be usable, if successive operations fail")
-	err = usbReceiverBL.EraseFlashTI()
-	if err != nil {
-		return err
-	}
-
-	//clear RAM buffer
-	fmt.Println("Clearing RAM buffer for flash write...")
-	err = usbReceiverBL.EraseFlashTI()
-	if err != nil {
-		return err
-	}
-
-	for addr := fwStartAddr; addr <= fwEndAddr; addr += fwFlashWriteBufSize {
-		chunk := fwbytes[addr-fwStartAddr : addr-fwStartAddr+fwFlashWriteBufSize]
-		//fmt.Printf("%04x: %x\n", addr, chunk)
-
-		// split flash chunk into RAM buffer chunks and upload to RAM Buffer
-		for ramAddr := uint16(0x0000); ramAddr < fwFlashWriteBufSize; ramAddr += 16 {
-			ram_chunk := chunk[ramAddr : ramAddr+16]
-			//fmt.Printf("\tRAM buffer %04x: %x\n", ramAddr, ram_chunk)
-
-			// Write to RAM buffer
-			err = usbReceiverBL.WriteFirmwareSliceToRAMBufferTI(ramAddr, ram_chunk)
-			if err != nil {
-				return err
-			}
-		}
-
-		// write RAM buffer to flash at proper address
-		err = usbReceiverBL.StoreRAMBufferToFlashAddrTI(addr)
-		if err != nil {
-			return err
-		}
-	}
-
-	// Write signature
-	if signature_required {
-		fmt.Println("Trying to write signature for firmware")
-		for sig_addr := uint16(0x0000); sig_addr <= uint16(0x00ff); sig_addr += 0x10 {
-			sig_chunk := firmware.Signature[sig_addr : sig_addr+0x10]
-
-			// write signature slice
-			err = usbReceiverBL.WriteSignatureSliceTI(sig_addr, sig_chunk)
-			if err != nil {
-				return err
-			}
-		}
-	}
-
-	// Check CRC
-	err = usbReceiverBL.CheckFirmwareCrcAndSignatureTI()
-	if err != nil {
-		return err
-	}
-
-	fmt.Println("Firmware flashing SUCCEEDED")
-	usbReceiverBL.Reboot()
-	return nil
 }
+
 
 // infoCmd represents the info command
 var testCmd = &cobra.Command{

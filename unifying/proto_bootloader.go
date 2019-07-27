@@ -13,19 +13,23 @@ guint8 		data[28];
 type BootloaderCommand byte
 
 const (
-	BOOTLOADER_COMMAND_REBOOT                           BootloaderCommand = 0x70
-	BOOTLOADER_COMMAND_GET_MEMORY_INFO                  BootloaderCommand = 0x80
-	BOOTLOADER_COMMAND_GET_BOOTLOADER_VERSION_STRING    BootloaderCommand = 0x90
-	BOOTLOADER_COMMAND_FLASH_READ_SIGNATURE             BootloaderCommand = 0xb0
-	BOOTLOADER_COMMAND_WRITE_TO_RAM_BUFFER              BootloaderCommand = 0xc0
-	BOOTLOADER_COMMAND_WRITE_TO_RAM_BUFFER_INVALID_ADDR BootloaderCommand = 0xc1
-	BOOTLOADER_COMMAND_WRITE_TO_RAM_BUFFER_OVERFLOW     BootloaderCommand = 0xc2
-	BOOTLOADER_COMMAND_FLASH                            BootloaderCommand = 0xd0
-	BOOTLOADER_COMMAND_FLASH_INVALID_ADDR               BootloaderCommand = 0xd1
-	BOOTLOADER_COMMAND_FLASH_WRONG_CRC                  BootloaderCommand = 0xd2
-	BOOTLOADER_COMMAND_FLASH_PAGE0_INVALID              BootloaderCommand = 0xd3
-	BOOTLOADER_COMMAND_FLASH_RAM_INVALID_ORDER          BootloaderCommand = 0xd4
-	BOOTLOADER_COMMAND_FLASH_WRITE_SIGNATURE            BootloaderCommand = 0xe0
+	BOOTLOADER_COMMAND_ERROR                            BootloaderCommand = 0x01
+	BOOTLOADER_COMMAND_NORDIC_READ                      BootloaderCommand = 0x10
+	BOOTLOADER_COMMAND_NORDIC_WRITE                        BootloaderCommand = 0x20
+	BOOTLOADER_COMMAND_NORDIC_ERASE_PAGE                   BootloaderCommand = 0x30
+	BOOTLOADER_COMMAND_REBOOT                              BootloaderCommand = 0x70
+	BOOTLOADER_COMMAND_GET_MEMORY_INFO                     BootloaderCommand = 0x80
+	BOOTLOADER_COMMAND_GET_BOOTLOADER_VERSION_STRING       BootloaderCommand = 0x90
+	BOOTLOADER_COMMAND_FLASH_READ_SIGNATURE                BootloaderCommand = 0xb0
+	BOOTLOADER_COMMAND_TI_WRITE_TO_RAM_BUFFER              BootloaderCommand = 0xc0
+	BOOTLOADER_COMMAND_TI_WRITE_TO_RAM_BUFFER_INVALID_ADDR BootloaderCommand = 0xc1
+	BOOTLOADER_COMMAND_TI_WRITE_TO_RAM_BUFFER_OVERFLOW     BootloaderCommand = 0xc2
+	BOOTLOADER_COMMAND_TI_FLASH                            BootloaderCommand = 0xd0
+	BOOTLOADER_COMMAND_FLASH_INVALID_ADDR                  BootloaderCommand = 0xd1
+	BOOTLOADER_COMMAND_FLASH_WRONG_CRC                     BootloaderCommand = 0xd2
+	BOOTLOADER_COMMAND_FLASH_PAGE0_INVALID                 BootloaderCommand = 0xd3
+	BOOTLOADER_COMMAND_FLASH_RAM_INVALID_ORDER             BootloaderCommand = 0xd4
+	BOOTLOADER_COMMAND_TI_FLASH_WRITE_SIGNATURE            BootloaderCommand = 0xe0
 )
 
 type BootloaderSubCommandFlash byte
@@ -45,7 +49,7 @@ type BootloaderReport struct {
 }
 
 func (r *BootloaderReport) String() (res string) {
-	res = fmt.Sprintf("Bootloader Report cmd: %02x, Addr: %#04x, len: %d, data: % #x", r.Cmd, r.Addr, r.Len, r.Data[:r.Len])
+	res = fmt.Sprintf("Bootloader Report cmd: %02x, Addr: %#04x, len: %d, data: % x", r.Cmd, r.Addr, r.Len, r.Data[:r.Len])
 
 	return res
 }

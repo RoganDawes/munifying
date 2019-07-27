@@ -42,6 +42,7 @@ type LocalUSBDongle struct {
 	ctx      context.Context
 
 	showInOut bool
+	wasClosed bool
 }
 
 func (u *LocalUSBDongle) SendUSBReport(msg USBReport) (err error) {
@@ -144,6 +145,11 @@ func (u *LocalUSBDongle) SetShowInOut(show bool) {
 }
 
 func (u *LocalUSBDongle) Close() {
+	if u.wasClosed {
+		return
+	}
+	u.wasClosed = true
+
 	fmt.Println("Closing Logitech receiver in Firmware mode (not bootloader)...")
 	if u.cancel != nil {
 		u.cancel()
@@ -468,6 +474,8 @@ func (u *LocalUSBDongle) SwitchToBootloader() (build uint16, err error) {
 	if err != nil {
 		return
 	}
+	time.Sleep(100 * time.Millisecond) //give some time to let the message move out, before closing the USB device
+	u.Close()
 
 	return
 }
@@ -904,6 +912,7 @@ type USBBootloaderDongle struct {
 	ctx      context.Context
 
 	showInOut bool
+	wasClosed bool
 }
 
 func (u *USBBootloaderDongle) SendUSBReport(msg BootloaderReport) (err error) {
@@ -930,6 +939,11 @@ func (u *USBBootloaderDongle) ReceiveUSBReport(timeoutMillis int) (msg Bootloade
 }
 
 func (u *USBBootloaderDongle) Close() {
+	if u.wasClosed {
+		return
+	}
+	u.wasClosed = true
+
 	fmt.Println("Closing Logitech Receiver in bootloader mode...")
 	if u.cancel != nil {
 		u.cancel()
@@ -1048,19 +1062,22 @@ func (u *USBBootloaderDongle) GetFirmwareMemoryInfo() (fwStartAddr, fwEndAddr, f
 }
 
 func (u *USBBootloaderDongle) Reboot() (err error) {
+	fmt.Println("Try to reboot receiver into runtime mode...")
 	reqClearFlash := BootloaderReport{Cmd: BOOTLOADER_COMMAND_REBOOT, Addr: 0x0000, Len: 0}
 	u.SendUSBReport(reqClearFlash)
+	time.Sleep(20 * time.Millisecond)
+	u.Close()
 	return
 }
 
 func (u *USBBootloaderDongle) EraseFlashTI() (err error) {
-	reqClearFlash := BootloaderReport{Cmd: BOOTLOADER_COMMAND_FLASH, Addr: 0x0000, Len: 1}
+	reqClearFlash := BootloaderReport{Cmd: BOOTLOADER_COMMAND_TI_FLASH, Addr: 0x0000, Len: 1}
 	reqClearFlash.Data[0] = byte(BOOTLOADER_SUB_COMMAND_FLASH_ERASE_ALL)
 	u.SendUSBReport(reqClearFlash)
 	rspClearFlash, err := u.ReceiveUSBReport(5000)
 	if err == nil {
 		switch rspClearFlash.Cmd {
-		case BOOTLOADER_COMMAND_FLASH:
+		case BOOTLOADER_COMMAND_TI_FLASH:
 			fmt.Printf("Flash erase flash succeeded - %s\n", rspClearFlash.String())
 			return
 		default:
@@ -1072,13 +1089,13 @@ func (u *USBBootloaderDongle) EraseFlashTI() (err error) {
 }
 
 func (u *USBBootloaderDongle) ClearRAMBufferTI() (err error) {
-	req := BootloaderReport{Cmd: BOOTLOADER_COMMAND_FLASH, Addr: 0x0000, Len: 1}
+	req := BootloaderReport{Cmd: BOOTLOADER_COMMAND_TI_FLASH, Addr: 0x0000, Len: 1}
 	req.Data[0] = byte(BOOTLOADER_SUB_COMMAND_FLASH_CLEAR_RAM_BUFFER)
 	u.SendUSBReport(req)
 	rsp, err := u.ReceiveUSBReport(500)
 	if err == nil {
 		switch rsp.Cmd {
-		case BOOTLOADER_COMMAND_FLASH:
+		case BOOTLOADER_COMMAND_TI_FLASH:
 			fmt.Printf("Clearing RAM BUFFER succeeded - %s\n", rsp.String())
 			return
 		default:
@@ -1095,19 +1112,19 @@ func (u *USBBootloaderDongle) WriteFirmwareSliceToRAMBufferTI(ramBufAddr uint16,
 	}
 
 	// Write to RAM buffer
-	reqWriteToRamBuffer := BootloaderReport{Cmd: BOOTLOADER_COMMAND_WRITE_TO_RAM_BUFFER, Addr: ramBufAddr, Len: 16}
+	reqWriteToRamBuffer := BootloaderReport{Cmd: BOOTLOADER_COMMAND_TI_WRITE_TO_RAM_BUFFER, Addr: ramBufAddr, Len: 16}
 	copy(reqWriteToRamBuffer.Data[:], firmwareSlice)
 	u.SendUSBReport(reqWriteToRamBuffer)
 	rspWriteToRamBuffer, err := u.ReceiveUSBReport(500)
 
 	if err == nil {
 		switch rspWriteToRamBuffer.Cmd {
-		case BOOTLOADER_COMMAND_WRITE_TO_RAM_BUFFER:
+		case BOOTLOADER_COMMAND_TI_WRITE_TO_RAM_BUFFER:
 			//fmt.Printf("Write to RAM buffer succeeded - %s\n", rspWriteToRamBuffer.String())
 			return
-		case BOOTLOADER_COMMAND_WRITE_TO_RAM_BUFFER_INVALID_ADDR:
+		case BOOTLOADER_COMMAND_TI_WRITE_TO_RAM_BUFFER_INVALID_ADDR:
 			return errors.New(fmt.Sprintf("error writing RAM buffer: invalid RAM buffer address %04x", ramBufAddr))
-		case BOOTLOADER_COMMAND_WRITE_TO_RAM_BUFFER_OVERFLOW:
+		case BOOTLOADER_COMMAND_TI_WRITE_TO_RAM_BUFFER_OVERFLOW:
 			return errors.New("error writing RAM buffer, RAM buffer overflow")
 		default:
 			return errors.New(fmt.Sprintf("error writing RAM buffer: unknown response command %02x", byte(rspWriteToRamBuffer.Cmd)))
@@ -1117,24 +1134,76 @@ func (u *USBBootloaderDongle) WriteFirmwareSliceToRAMBufferTI(ramBufAddr uint16,
 	}
 }
 
+func (u *USBBootloaderDongle) WriteFirmwareSliceToFlashNordic(ramBufAddr uint16, firmwareSlice []byte) (err error) {
+	if firmwareSlice == nil || len(firmwareSlice) > 28 { //Nordic firmware slice should never exceed length 0x1c
+		return errors.New("firmware slice has incorrect size, maximum is 28 bytes")
+	}
+
+	slen := byte(len(firmwareSlice))
+
+	// Write slice to given address
+	reqWrite := BootloaderReport{Cmd: BOOTLOADER_COMMAND_NORDIC_WRITE, Addr: ramBufAddr, Len: slen}
+	copy(reqWrite.Data[:], firmwareSlice)
+	u.SendUSBReport(reqWrite)
+	rspWrite, err := u.ReceiveUSBReport(50000) //50s timeout, last write needs very long (involves Signature check)
+
+	if err == nil {
+		switch rspWrite.Cmd {
+		case BOOTLOADER_COMMAND_NORDIC_WRITE:
+			fmt.Printf("Flash write succeeded - %s\n", rspWrite.String())
+			return
+		default:
+			return errors.New(fmt.Sprintf("error writing to flash: unknown response command %02x", byte(rspWrite.Cmd)))
+		}
+	} else {
+		return errors.New("error writing to flash")
+	}
+}
+
 func (u *USBBootloaderDongle) WriteSignatureSliceTI(signatureAddr uint16, signatureSlice []byte) (err error) {
-	if (signatureSlice == nil || len(signatureSlice) != 16) {
+	if signatureSlice == nil || len(signatureSlice) != 16 {
 		return errors.New("signature slice has incorrect size, has to be 16 bytes")
+	}
+
+	if signatureAddr > 0xff {
+		return errors.New("invalid write address for signature")
+	}
+
+	reqWriteSignatureChunk := BootloaderReport{Cmd: BOOTLOADER_COMMAND_TI_FLASH_WRITE_SIGNATURE, Addr: signatureAddr, Len: 16}
+	copy(reqWriteSignatureChunk.Data[:], signatureSlice)
+	u.SendUSBReport(reqWriteSignatureChunk)
+	rspWriteSignatureChunk, err := u.ReceiveUSBReport(500)
+	if err == nil {
+		switch rspWriteSignatureChunk.Cmd {
+		case BOOTLOADER_COMMAND_TI_FLASH_WRITE_SIGNATURE:
+			fmt.Printf("Write signature at %04x succeeded - %s\n", signatureAddr, rspWriteSignatureChunk.String())
+			return
+		default:
+			return errors.New(fmt.Sprintf("Error writing signature at %04x, error code %02x", signatureAddr, byte(rspWriteSignatureChunk.Cmd)))
+		}
+	} else {
+		return errors.New(fmt.Sprintf("Error writing signature at %04x", signatureAddr))
+	}
+}
+
+func (u *USBBootloaderDongle) WriteSignatureSliceNordic(signatureAddr uint16, signatureSlice []byte) (err error) {
+	if (signatureSlice == nil || len(signatureSlice) > 28) {
+		return errors.New("signature slice has incorrect size, has to be less than 28 bytes")
 	}
 
 	if (signatureAddr > 0xff) {
 		return errors.New("invalid write address for signature")
 	}
 
-	reqWriteSignatureChunk := BootloaderReport{Cmd: BOOTLOADER_COMMAND_FLASH_WRITE_SIGNATURE, Addr: signatureAddr, Len: 16}
+	reqWriteSignatureChunk := BootloaderReport{Cmd: BOOTLOADER_COMMAND_TI_WRITE_TO_RAM_BUFFER, Addr: signatureAddr, Len: uint8(len(signatureSlice))}
 	copy(reqWriteSignatureChunk.Data[:], signatureSlice)
 	u.SendUSBReport(reqWriteSignatureChunk)
 	rspWriteSignatureChunk, err := u.ReceiveUSBReport(500)
 	if err == nil {
 		switch rspWriteSignatureChunk.Cmd {
-		case BOOTLOADER_COMMAND_FLASH_WRITE_SIGNATURE:
+		case BOOTLOADER_COMMAND_TI_WRITE_TO_RAM_BUFFER:
 			fmt.Printf("Write signature at %04x succeeded - %s\n", signatureAddr, rspWriteSignatureChunk.String())
-		return
+			return
 		default:
 			return errors.New(fmt.Sprintf("Error writing signature at %04x, error code %02x", signatureAddr, byte(rspWriteSignatureChunk.Cmd)))
 		}
@@ -1162,7 +1231,7 @@ func (u *USBBootloaderDongle) ReadSignatureSliceTI(signatureAddr uint16, len byt
 	}
 }
 
-func (u *USBBootloaderDongle) GenericCommandTI(cmd BootloaderCommand, addr uint16, data[]byte) (err error) {
+func (u *USBBootloaderDongle) GenericCommandTI(cmd BootloaderCommand, addr uint16, data []byte) (err error) {
 	if len(data) > 28 {
 		return errors.New("error: data must not be larger than 28 bytes")
 	}
@@ -1186,14 +1255,31 @@ func (u *USBBootloaderDongle) GenericCommandTI(cmd BootloaderCommand, addr uint1
 	}
 }
 
+func (u *USBBootloaderDongle) EraseFlashNordic(FlashAddr uint16) (err error) {
+	reqErasePage := BootloaderReport{Cmd: BOOTLOADER_COMMAND_NORDIC_ERASE_PAGE, Addr: FlashAddr, Len: 1}
+	u.SendUSBReport(reqErasePage)
+	rspErasePage, err := u.ReceiveUSBReport(500)
+	if err == nil {
+		switch rspErasePage.Cmd {
+		case BOOTLOADER_COMMAND_NORDIC_ERASE_PAGE:
+			fmt.Printf("Erase flash page %#04x succeeded - %s\n", FlashAddr, rspErasePage.String())
+			return
+		default:
+			return errors.New(fmt.Sprintf("Error erase page at addr %04x, unknown response command %02x", FlashAddr, byte(rspErasePage.Cmd)))
+		}
+	} else {
+		return errors.New(fmt.Sprintf("Error erasing flash page flash at addr %04x", FlashAddr))
+	}
+}
+
 func (u *USBBootloaderDongle) StoreRAMBufferToFlashAddrTI(FlashAddr uint16) (err error) {
-	reqStoreRamBufferToFlash := BootloaderReport{Cmd: BOOTLOADER_COMMAND_FLASH, Addr: FlashAddr, Len: 1}
+	reqStoreRamBufferToFlash := BootloaderReport{Cmd: BOOTLOADER_COMMAND_TI_FLASH, Addr: FlashAddr, Len: 1}
 	reqStoreRamBufferToFlash.Data[0] = byte(BOOTLOADER_SUB_COMMAND_FLASH_WRITE_RAM_BUFFER);
 	u.SendUSBReport(reqStoreRamBufferToFlash)
 	rspStoreRamBufferToFlash, err := u.ReceiveUSBReport(500)
 	if err == nil {
 		switch rspStoreRamBufferToFlash.Cmd {
-		case BOOTLOADER_COMMAND_FLASH:
+		case BOOTLOADER_COMMAND_TI_FLASH:
 			fmt.Printf("Store RAM buffer to flash at %04x succeeded - %s\n", FlashAddr, rspStoreRamBufferToFlash.String())
 			return
 		default:
@@ -1205,13 +1291,13 @@ func (u *USBBootloaderDongle) StoreRAMBufferToFlashAddrTI(FlashAddr uint16) (err
 }
 
 func (u *USBBootloaderDongle) CheckFirmwareCrcAndSignatureTI() (err error) {
-	reqCheckFlashCRC := BootloaderReport{Cmd: BOOTLOADER_COMMAND_FLASH, Addr: 0, Len: 1}
+	reqCheckFlashCRC := BootloaderReport{Cmd: BOOTLOADER_COMMAND_TI_FLASH, Addr: 0, Len: 1}
 	reqCheckFlashCRC.Data[0] = byte(BOOTLOADER_SUB_COMMAND_FLASH_CHECK_CRC);
 	u.SendUSBReport(reqCheckFlashCRC)
 	rspCheckFlashCRC, err := u.ReceiveUSBReport(20000) // takes long, thus we give 20 seconds
 	if err == nil {
 		switch rspCheckFlashCRC.Cmd {
-		case BOOTLOADER_COMMAND_FLASH:
+		case BOOTLOADER_COMMAND_TI_FLASH:
 			fmt.Printf("Flash CRC check succeeded - %s\n", rspCheckFlashCRC.String())
 			return
 		default:
@@ -1247,6 +1333,268 @@ func (u *USBBootloaderDongle) GetBLVersionString() (versionString string, maj, m
 		return
 	}
 
+}
+
+func (u *USBBootloaderDongle) FlashReceiver(firmware *Firmware) (err error) {
+
+	_, BLmaj, _, _, err := u.GetBLVersionString()
+	if err != nil {
+		log.Fatal(err)
+	}
+	if BLmaj == 0x03 {
+		fmt.Println("bootloader major version hints that this is a Texas Instruments CC2544 based Logitech dongle")
+		fmt.Println("Trying to write firmware for CC2544..")
+		return u.FlashTIReceiverTI(firmware)
+	} else if BLmaj == 0x01 {
+		fmt.Println("bootloader major version hints that this is a Nordic nRF24LU1+ based Logitech dongle")
+		fmt.Println("Trying to write firmware for nRF24LU1+..")
+		return u.FlashReceiverNordic(firmware)
+	} else {
+		return errors.New(fmt.Sprintf("bootloader major version %02x hints that receiver is neither a TI CC2544 nor Nordic nRF24LU1+, aborting..."))
+	}
+
+}
+
+func (u *USBBootloaderDongle) FlashTIReceiverTI(firmware *Firmware) (err error) {
+	if firmware == nil || firmware.TargetType != FIRMWARE_TARGET_TYPE_TI {
+		return errors.New("Provided firmware is not build for CC2544 based receivers")
+	}
+	fmt.Println("Trying to flash provided Texas Instruments firmware")
+	signature_required := false
+
+	_, BLmaj, BLmin, _, err := u.GetBLVersionString()
+	if err != nil {
+		log.Fatal(err)
+	}
+	if BLmaj != 0x03 {
+		return errors.New("bootloader major version hints that this is not a Texas Instruments CC2544 based Logitech dongle")
+	}
+
+	if BLmaj >= 3 && BLmin >= 2 {
+		fmt.Println("CAUTION: According to bootloader version, only signed firmwares are accepted!")
+		signature_required = true
+		fmt.Println("Firmware has to be signed for the bootloader used by this receiver")
+
+		if !firmware.HasSignature {
+			return errors.New("provided firmware has no signature, but the bootloader requires one.")
+		}
+	} else {
+		fmt.Println("Firmware does not have to be signed for the bootloader used by this receiver")
+	}
+
+	fmt.Println("Retrieving firmware memory info from bootloader...")
+	fwStartAddr, fwEndAddr, fwFlashWriteBufSize, err := u.GetFirmwareMemoryInfo()
+	if err != nil {
+		return err
+	}
+
+	fwbytes, err := firmware.BaseImage()
+	if err != nil {
+		return errors.New(fmt.Sprintf("error fetching firmware base image: %v", err))
+
+	}
+
+	intended_fw_size := fwEndAddr - fwStartAddr + 1
+	if intended_fw_size != firmware.Size {
+		if firmware.Size == 0x6000 && intended_fw_size == 0x6800 && BLmaj <= 3 && BLmin <= 1 {
+			fmt.Println("According to the size, the provided firmware seems to be build for a Bootloader version >= 03.02 (signed)")
+			fmt.Println("Target receiver's Bootloader version is <=03.01 (unsigned), try to create a downgraded firmware...")
+
+			fmt.Println("provided firmware file has wrong size, trying to resize")
+
+			if (signature_required) {
+				return errors.New("can not resize the firmware without invalidating the signature, aborting...")
+			}
+
+			//grow firmware to needed size
+			fwbytes, err = firmware.BaseImageDowngradeFromBL0302ToBL0301()
+			if err != nil {
+				return errors.New(fmt.Sprintf("failed to resize firmware: %v\n", err))
+			}
+		} else {
+			return errors.New("Firmware doesn't match target bootloader's memory layout and can not be patched")
+		}
+
+	}
+
+	//erase flash
+	//ToDo: let user decide to continue
+	fmt.Println("Erasing dongle flash: CAUTION the dongle will not be usable, if successive operations fail")
+	err = u.EraseFlashTI()
+	if err != nil {
+		return err
+	}
+
+	//clear RAM buffer
+	fmt.Println("Clearing RAM buffer for flash write...")
+	err = u.EraseFlashTI()
+	if err != nil {
+		return err
+	}
+
+	for addr := fwStartAddr; addr <= fwEndAddr; addr += fwFlashWriteBufSize {
+		chunk := fwbytes[addr-fwStartAddr : addr-fwStartAddr+fwFlashWriteBufSize]
+		//fmt.Printf("%04x: %x\n", addr, chunk)
+
+		// split flash chunk into RAM buffer chunks and upload to RAM Buffer
+		for ramAddr := uint16(0x0000); ramAddr < fwFlashWriteBufSize; ramAddr += 16 {
+			ram_chunk := chunk[ramAddr : ramAddr+16]
+			//fmt.Printf("\tRAM buffer %04x: %x\n", ramAddr, ram_chunk)
+
+			// Write to RAM buffer
+			err = u.WriteFirmwareSliceToRAMBufferTI(ramAddr, ram_chunk)
+			if err != nil {
+				return err
+			}
+		}
+
+		// write RAM buffer to flash at proper address
+		err = u.StoreRAMBufferToFlashAddrTI(addr)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Write signature
+	if signature_required {
+		fmt.Println("Trying to write signature for firmware")
+		for sig_addr := uint16(0x0000); sig_addr <= uint16(0x00ff); sig_addr += 0x10 {
+			sig_chunk := firmware.Signature[sig_addr : sig_addr+0x10]
+
+			// write signature slice
+			err = u.WriteSignatureSliceTI(sig_addr, sig_chunk)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	// Check CRC
+	fmt.Println("Initiate firmware CRC/signature check - don't unplug!!")
+	err = u.CheckFirmwareCrcAndSignatureTI()
+	if err != nil {
+		return err
+	}
+
+	fmt.Println("Firmware flashing SUCCEEDED")
+	return nil
+}
+
+func (u *USBBootloaderDongle) FlashReceiverNordic(firmware *Firmware) (err error) {
+	if firmware == nil || firmware.TargetType != FIRMWARE_TARGET_TYPE_NORDIC {
+		return errors.New("Provided firmware is not build for nRF24 based receivers")
+	}
+
+	signature_required := false
+
+	_, BLmaj, BLmin, _, err := u.GetBLVersionString()
+	if err != nil {
+		log.Fatal(err)
+	}
+	if BLmaj != 0x01 {
+		return errors.New("bootloader major version hints that this is not a Nordic nRF24LU1+ based Logitech dongle")
+	}
+
+	if BLmaj >= 1 && BLmin >= 4 {
+		fmt.Println("CAUTION: According to bootloader version, only signed firmwares are accepted!")
+		signature_required = true
+
+		if !firmware.HasSignature {
+			return errors.New("provided firmware has no signature, but the bootloader requires one.")
+		}
+	}
+
+	fmt.Println("Retrieving firmware memory info from bootloader...")
+	fwStartAddr, fwEndAddr, fwFlashWriteBufSize, err := u.GetFirmwareMemoryInfo()
+	if err != nil {
+		return err
+	}
+
+	fwbytes, err := firmware.BaseImage()
+	if err != nil {
+		return errors.New(fmt.Sprintf("error fetching firmware base image: %v", err))
+
+	}
+
+	intended_fw_size := fwEndAddr - fwStartAddr + 1
+	if intended_fw_size != firmware.Size {
+		return errors.New(fmt.Sprintf("Firmware doesn't match target's bootloader memory layout (firmware size %#x, intended %#x)", firmware.Size, intended_fw_size))
+	}
+
+
+
+	//erase flash
+	//ToDo: let user decide to continue
+	fmt.Println("Erasing dongle flash: CAUTION the dongle will not be usable, if successive operations fail")
+	for eraseAddr := fwStartAddr; eraseAddr<fwEndAddr; eraseAddr += fwFlashWriteBufSize {
+		err = u.EraseFlashNordic(eraseAddr)
+		if err != nil {
+			return err
+		}
+	}
+
+
+	fmt.Println("Writing firmware")
+	writeSize := uint16(0x1C)
+	if BLmin < 0x04 {
+		writeSize = uint16(0x10) //16 byte per write on old bootloader, on newer ones 28 bytes
+	}
+	for addr := fwStartAddr+0x01; addr <= fwEndAddr; addr += writeSize { //skip first chunk
+		chunkEndAddr := addr+writeSize
+		if chunkEndAddr > firmware.Size {
+			chunkEndAddr = firmware.Size
+		}
+		chunk := fwbytes[addr : chunkEndAddr]
+
+
+		//fmt.Printf("chunk start %04x len %02x: %02x\n", addr, byte(len(chunk)), chunk)
+		//continue
+
+		// write RAM buffer to flash at proper address
+		err = u.WriteFirmwareSliceToFlashNordic(addr, chunk)
+		if err != nil {
+			return err
+		}
+	}
+
+
+
+	// Write signature
+	if signature_required {
+		fmt.Println("Trying to write signature for firmware")
+		for sig_addr := uint16(0x0000); sig_addr <= uint16(0x00ff); sig_addr += 0x1c {
+			chunkEnd := sig_addr+0x1c
+			if chunkEnd > uint16(len(firmware.Signature)) {
+				chunkEnd = uint16(len(firmware.Signature))
+			}
+			sig_chunk := firmware.Signature[sig_addr : chunkEnd]
+
+			// write signature slice
+			err = u.WriteSignatureSliceNordic(sig_addr, sig_chunk)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	/*
+	//write last chunk
+	fmt.Println("Writing last chunk...")
+	err = u.WriteFirmwareSliceToFlashNordic(0x0001, fwbytes[1:0x0a])
+	if err != nil {
+		return err
+	}
+	*/
+	fmt.Println("Writing reset vector...")
+	err = u.WriteFirmwareSliceToFlashNordic(0x0000, fwbytes[0:1])
+	if err != nil {
+		return err
+	}
+
+
+
+	fmt.Println("Firmware flashing SUCCEEDED")
+	return nil
 }
 
 func NewUSBBootloaderDongle() (res *USBBootloaderDongle, err error) {

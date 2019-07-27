@@ -5,8 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"github.com/sigurn/crc16"
-	"io/ioutil"
 	"strings"
+)
+
+type FirmwareTargetType byte
+
+const (
+	FIRMWARE_TARGET_TYPE_UNKNOWN FirmwareTargetType = 0x00
+	FIRMWARE_TARGET_TYPE_NORDIC  FirmwareTargetType = 0x01
+	FIRMWARE_TARGET_TYPE_TI      FirmwareTargetType = 0x02
 )
 
 type Firmware struct {
@@ -19,6 +26,7 @@ type Firmware struct {
 	TailPos      uint16
 	Signature    [256]byte
 	HasSignature bool
+	TargetType   FirmwareTargetType
 }
 
 func (f *Firmware) AddSignature(sig []byte) (err error) {
@@ -38,7 +46,6 @@ func (f *Firmware) BaseImage() (img []byte, err error) {
 	copy(img, f.RawData[f.StartOffset:f.StartOffset+f.Size])
 	return
 }
-
 
 /*
 Firmware images are either meant for <=BOT03.01 (unsigned) or BOT03.02 (signed)
@@ -102,23 +109,27 @@ patch a firmware for downgrade. It does not give any guarantees for a working re
 
  */
 func (f *Firmware) BaseImageDowngradeFromBL0302ToBL0301() (patched_baseimage []byte, err error) {
+	if f.TargetType != FIRMWARE_TARGET_TYPE_TI {
+		return nil,errors.New("error: downgrade only supported for CC2544 firmware")
+	}
+
 	if f.Size != 0x6000 {
 		err = errors.New("can't downgrade an image which hasn't a size of 0x6000")
 		return
 	}
 
 	//grab a copy of the base image
-	patched_baseimage = make([]byte, f.Size + 0x800)
+	patched_baseimage = make([]byte, f.Size+0x800)
 	copy(patched_baseimage, f.RawData[f.StartOffset:f.StartOffset+f.Size])
 
 	fmt.Println("... resizing firmware")
 	//overwrite image CRC and end marker with 0xFF
-	for i:=0; i<6; i++ {
-		patched_baseimage[0x6000 - 6 + i] = 0xFF
+	for i := 0; i < 6; i++ {
+		patched_baseimage[0x6000-6+i] = 0xFF
 	}
 
 	// fill appended data with 0xFF
-	for i:=0x6000; i<len(patched_baseimage); i++ {
+	for i := 0x6000; i < len(patched_baseimage); i++ {
 		patched_baseimage[i] = 0xFF
 	}
 
@@ -147,20 +158,20 @@ func (f *Firmware) BaseImageDowngradeFromBL0302ToBL0301() (patched_baseimage []b
 	//14	057919		-->	05791b
 
 	fmt.Println("... patching firmware")
-	patched_baseimage = bytes.Replace(patched_baseimage, []byte{0x90,0xe4,0x00}, []byte{0x90,0xec,0x00}, -1)
-	patched_baseimage = bytes.Replace(patched_baseimage, []byte{0x7a,0x04,0x7b,0xe4}, []byte{0x7a,0x04,0x7b,0xec}, -1)
-	patched_baseimage = bytes.Replace(patched_baseimage, []byte{0x90,0xe8,0x00}, []byte{0x90,0xf0,0x00}, -1)
-	patched_baseimage = bytes.Replace(patched_baseimage, []byte{0x7a,0x04,0x7b,0xe8}, []byte{0x7a,0x04,0x7b,0xf0}, -1)
-	patched_baseimage = bytes.Replace(patched_baseimage, []byte{0x08,0x74,0xe4}, []byte{0x08,0x74,0xec}, -1)
-	patched_baseimage = bytes.Replace(patched_baseimage, []byte{0x75,0x0f,0xe8}, []byte{0x75,0x0f,0xf0}, -1)
-	patched_baseimage = bytes.Replace(patched_baseimage, []byte{0x79,0x1a}, []byte{0x79,0x1c}, -1)
-	patched_baseimage = bytes.Replace(patched_baseimage, []byte{0x7f,0x1a,0x79,0x7f}, []byte{0x7f,0x1c,0x79,0x7f}, -1)
-	patched_baseimage = bytes.Replace(patched_baseimage, []byte{0x7f,0x19}, []byte{0x7f,0x1b}, -1)
-	patched_baseimage = bytes.Replace(patched_baseimage, []byte{0x79,0x19}, []byte{0x79,0x1b}, -1)
-	patched_baseimage = bytes.Replace(patched_baseimage, []byte{0xf2,0x08,0x74,0xe8}, []byte{0xf2,0x08,0x74,0xf0}, -1)
-	patched_baseimage = bytes.Replace(patched_baseimage, []byte{0x0f,0xe4,0x22}, []byte{0x0f,0xec,0x22}, -1)
-	patched_baseimage = bytes.Replace(patched_baseimage, []byte{0x00,0x7b,0x64}, []byte{0x00,0x7b,0x6c}, -1)
-	patched_baseimage = bytes.Replace(patched_baseimage, []byte{0x05,0x79,0x19}, []byte{0x05,0x79,0x1b}, -1)
+	patched_baseimage = bytes.Replace(patched_baseimage, []byte{0x90, 0xe4, 0x00}, []byte{0x90, 0xec, 0x00}, -1)
+	patched_baseimage = bytes.Replace(patched_baseimage, []byte{0x7a, 0x04, 0x7b, 0xe4}, []byte{0x7a, 0x04, 0x7b, 0xec}, -1)
+	patched_baseimage = bytes.Replace(patched_baseimage, []byte{0x90, 0xe8, 0x00}, []byte{0x90, 0xf0, 0x00}, -1)
+	patched_baseimage = bytes.Replace(patched_baseimage, []byte{0x7a, 0x04, 0x7b, 0xe8}, []byte{0x7a, 0x04, 0x7b, 0xf0}, -1)
+	patched_baseimage = bytes.Replace(patched_baseimage, []byte{0x08, 0x74, 0xe4}, []byte{0x08, 0x74, 0xec}, -1)
+	patched_baseimage = bytes.Replace(patched_baseimage, []byte{0x75, 0x0f, 0xe8}, []byte{0x75, 0x0f, 0xf0}, -1)
+	patched_baseimage = bytes.Replace(patched_baseimage, []byte{0x79, 0x1a}, []byte{0x79, 0x1c}, -1)
+	patched_baseimage = bytes.Replace(patched_baseimage, []byte{0x7f, 0x1a, 0x79, 0x7f}, []byte{0x7f, 0x1c, 0x79, 0x7f}, -1)
+	patched_baseimage = bytes.Replace(patched_baseimage, []byte{0x7f, 0x19}, []byte{0x7f, 0x1b}, -1)
+	patched_baseimage = bytes.Replace(patched_baseimage, []byte{0x79, 0x19}, []byte{0x79, 0x1b}, -1)
+	patched_baseimage = bytes.Replace(patched_baseimage, []byte{0xf2, 0x08, 0x74, 0xe8}, []byte{0xf2, 0x08, 0x74, 0xf0}, -1)
+	patched_baseimage = bytes.Replace(patched_baseimage, []byte{0x0f, 0xe4, 0x22}, []byte{0x0f, 0xec, 0x22}, -1)
+	patched_baseimage = bytes.Replace(patched_baseimage, []byte{0x00, 0x7b, 0x64}, []byte{0x00, 0x7b, 0x6c}, -1)
+	patched_baseimage = bytes.Replace(patched_baseimage, []byte{0x05, 0x79, 0x19}, []byte{0x05, 0x79, 0x1b}, -1)
 
 	//put in the new end marker
 	copy(patched_baseimage[len(patched_baseimage)-4:], []byte{0xfe, 0xc0, 0xad, 0xde})
@@ -170,7 +181,6 @@ func (f *Firmware) BaseImageDowngradeFromBL0302ToBL0301() (patched_baseimage []b
 	calculated_crc := crc16.Checksum(patched_baseimage[:len(patched_baseimage)-6], crc16.MakeTable(crc16.CRC16_CCITT_FALSE)) //only regard data up to CRC offset
 	patched_baseimage[len(patched_baseimage)-6] = byte(calculated_crc & 0x00ff)
 	patched_baseimage[len(patched_baseimage)-5] = byte(calculated_crc >> 8)
-
 
 	return
 
@@ -182,14 +192,7 @@ func (f *Firmware) String() string {
 	return res
 }
 
-func ParseFirmware(filepath string) (f *Firmware, err error) {
-	fmt.Println("Parsing raw firmware blob ...")
-	f = &Firmware{}
-	f.RawData, err = ioutil.ReadFile(filepath)
-	if err != nil {
-		return nil, errors.New(fmt.Sprintf("error reading firmware file: %v", err))
-	}
-
+func (f *Firmware) ParseFirmwareTI() (err error) {
 	// if a bootloader is present the following data is present
 	// - 0x03f8 uint16, USB VID (LE)
 	// - 0x03fa uint16, USB PID (LE)
@@ -212,14 +215,14 @@ func ParseFirmware(filepath string) (f *Firmware, err error) {
 	// ToDo: The firmware type could be determined from bootloader PID
 	if pos := strings.Index(string(f.RawData[f.StartOffset:]), "\xfe\xc0\xad\xde"); pos < 0 {
 		//can't find magic bytes
-		return nil, errors.New("seems to be no valid Logitech firmware for TI, magic bytes missing")
+		return errors.New("seems to be no valid Logitech firmware for TI, magic bytes missing")
 	} else {
 		f.Size = uint16(pos) + 4
 		f.LastOffset = f.Size + f.StartOffset - 1
 		f.TailPos = f.StartOffset + f.Size - 6
 	}
 
-	fmt.Println(f.String())
+//	fmt.Println(f.String())
 
 	// extract CRC
 	f.CRC = uint16(f.RawData[f.TailPos+1])<<8 | uint16(f.RawData[f.TailPos])
@@ -227,9 +230,99 @@ func ParseFirmware(filepath string) (f *Firmware, err error) {
 	// check CRC
 	calculated_crc := crc16.Checksum(f.RawData[f.StartOffset:f.StartOffset+f.Size-6], crc16.MakeTable(crc16.CRC16_CCITT_FALSE))
 	if calculated_crc != f.CRC {
-		return nil, errors.New(fmt.Sprintf("Firmware has wrong CRC (inteded %#04x, found %#04x)", calculated_crc, f.CRC))
+		return errors.New(fmt.Sprintf("Firmware has wrong CRC (inteded %#04x, found %#04x)", calculated_crc, f.CRC))
 	}
 	fmt.Printf("...firmware CRC correct: %04x\n", calculated_crc)
 
-	return f, nil
+	return nil
+
 }
+
+func (f *Firmware) ParseFirmwareNordic() (err error) {
+	// check USB VID in order to determine if a BL is prepended to the firmware blob (Logitech VID is 0x046d)
+	if len(f.RawData) > 0x7400 && f.RawData[0x7400 + 0xbb0] == 0x04 && f.RawData[0x7400 + 0xbb1] == 0x6d {
+		f.HasBL = true
+		fmt.Println("...firmware blob has a bootloader appended")
+	} else {
+		f.HasBL = false
+		fmt.Println("...firmware blob has no bootloader appended")
+	}
+
+	// do first CRC check asuming that fw size is 6400 (for signed BL 01.04+)
+
+	// extract CRC
+
+	//fmt.Printf("!!!CRC16 %#04x\n", crc16.Checksum(f.RawData[0x0A:0x6400], crc16.MakeTable(crc16.CRC16_CCITT_FALSE)))
+
+	// check CRC, assuming image size 0x6400
+	f.StartOffset = 0x0000
+	f.LastOffset = 0x63ff
+	f.Size = 0x6400
+	f.CRC = uint16(f.RawData[f.Size-2])<<8 | uint16(f.RawData[f.Size-1])
+
+	for i:= uint16(0x6000); i<f.Size;i++ {
+		crc16 := crc16.Checksum(f.RawData[:i], crc16.MakeTable(crc16.CRC16_CCITT_FALSE))
+		if crc16 == f.CRC {
+			fmt.Printf("assumed code end at at %#x\n", i)
+			//check if remaining data are all 0x00
+			for _,val := range f.RawData[i:f.Size-2] {
+				if val != 0x00 {
+					return errors.New("CRC error")
+				}
+			}
+			fmt.Printf("...firmware CRC correct: %04x\n", crc16)
+			return nil
+		}
+	}
+
+	// repeat CRC check, assuming image size 0x6800
+	f.StartOffset = 0x0000
+	f.LastOffset = 0x67ff
+	f.Size = 0x6800
+	f.CRC = uint16(f.RawData[f.Size-2])<<8 | uint16(f.RawData[f.Size-1])
+
+	for i:= uint16(0x6000); i<f.Size;i++ {
+		crc16 := crc16.Checksum(f.RawData[:i], crc16.MakeTable(crc16.CRC16_CCITT_FALSE))
+		if crc16 == f.CRC {
+			fmt.Printf("assumed code end at %#x\n", i)
+			//check if remaining data are all 0x00
+			for _,val := range f.RawData[i:f.Size-2] {
+				if val != 0x00 {
+					return errors.New("CRC error")
+				}
+			}
+			fmt.Printf("...firmware CRC correct: %04x\n", crc16)
+			return nil
+		}
+	}
+
+
+	return errors.New("No valid firmware image")
+}
+
+func ParseFirmwareBin(binblob []byte) (f *Firmware, err error) {
+	fmt.Println("Parsing raw firmware blob ...")
+	f = &Firmware{}
+	f.RawData = binblob
+
+	f.TargetType = FIRMWARE_TARGET_TYPE_UNKNOWN
+	err = f.ParseFirmwareTI()
+	if err != nil {
+		fmt.Printf("No Texas Instruments firmware: %v\n", err)
+		// seems to be no TI firmware, try to parse as Nordic
+		errNordic := f.ParseFirmwareNordic()
+		if errNordic != nil {
+			fmt.Printf("No Nordic firmware: %v\n", errNordic)
+			return nil,errors.New("unsupported firmware format - neither nordic, nor TI")
+		}
+		fmt.Println("...provided firmware targets Nordic based receiver")
+		f.TargetType = FIRMWARE_TARGET_TYPE_NORDIC
+	} else {
+		f.TargetType = FIRMWARE_TARGET_TYPE_TI
+		fmt.Println("...provided firmware targets Texas Instruments based receiver")
+	}
+
+
+	return f,nil
+}
+
