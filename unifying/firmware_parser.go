@@ -1,10 +1,13 @@
 package unifying
 
 import (
+	"bufio"
 	"bytes"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"github.com/sigurn/crc16"
+	"os"
 	"strings"
 )
 
@@ -27,6 +30,62 @@ type Firmware struct {
 	Signature    [256]byte
 	HasSignature bool
 	TargetType   FirmwareTargetType
+}
+
+func (f *Firmware) pushRawHexLine(hexline []byte) (err error) {
+	if hexline == nil || len(hexline) < 4 {
+		return errors.New("invalid")
+	}
+
+	length := hexline[0]
+	addr := int(hexline[1])<<8 | int(hexline[2])
+	target := hexline[3] // 0x00 - firmware data, 0xfd - signature data
+	resultsize := addr + int(length)
+	data := hexline[4 : 4+length]
+
+	switch target {
+	case 0x00:
+		// firmware data
+		if f.RawData == nil {
+			f.StartOffset = uint16(addr)
+			f.RawData = make([]byte, 0)
+		}
+
+		//append 0xFF till new size requirement is met
+		if len(f.RawData) < resultsize {
+			tail := make([]byte, resultsize-len(f.RawData))
+			for i, _ := range tail {
+				tail[i] = 0xFF
+			}
+			f.RawData = append(f.RawData, tail...)
+		}
+
+		//copy in new data
+		//fmt.Printf("Appended data at %#04x\n",addr)
+		copy(f.RawData[addr:resultsize], data)
+		if uint16(addr) < f.StartOffset {
+			f.StartOffset = uint16(addr)
+		}
+		if uint16(resultsize) > f.Size+f.StartOffset {
+			f.Size = uint16(resultsize)-f.StartOffset
+			f.LastOffset = f.StartOffset + f.Size - 1
+		}
+	case 0xfd:
+		// signature data
+		if !f.HasSignature {
+			fmt.Println("signature data added")
+		}
+		f.HasSignature = true
+		if resultsize > 0x100 {
+			return errors.New("invalid signature data, out of bounds")
+		}
+		copy(f.Signature[addr:resultsize], data)
+	default:
+		//invalid
+		return errors.New("invalid")
+	}
+
+	return
 }
 
 func (f *Firmware) AddSignature(sig []byte) (err error) {
@@ -110,7 +169,7 @@ patch a firmware for downgrade. It does not give any guarantees for a working re
  */
 func (f *Firmware) BaseImageDowngradeFromBL0302ToBL0301() (patched_baseimage []byte, err error) {
 	if f.TargetType != FIRMWARE_TARGET_TYPE_TI {
-		return nil,errors.New("error: downgrade only supported for CC2544 firmware")
+		return nil, errors.New("error: downgrade only supported for CC2544 firmware")
 	}
 
 	if f.Size != 0x6000 {
@@ -222,7 +281,7 @@ func (f *Firmware) ParseFirmwareTI() (err error) {
 		f.TailPos = f.StartOffset + f.Size - 6
 	}
 
-//	fmt.Println(f.String())
+	//	fmt.Println(f.String())
 
 	// extract CRC
 	f.CRC = uint16(f.RawData[f.TailPos+1])<<8 | uint16(f.RawData[f.TailPos])
@@ -240,14 +299,13 @@ func (f *Firmware) ParseFirmwareTI() (err error) {
 
 func (f *Firmware) ParseFirmwareNordic() (err error) {
 	// check USB VID in order to determine if a BL is prepended to the firmware blob (Logitech VID is 0x046d)
-	if len(f.RawData) > 0x7400 && f.RawData[0x7400 + 0xbb0] == 0x04 && f.RawData[0x7400 + 0xbb1] == 0x6d {
+	if len(f.RawData) > 0x7400 && f.RawData[0x7400+0xbb0] == 0x04 && f.RawData[0x7400+0xbb1] == 0x6d {
 		f.HasBL = true
 		fmt.Println("...firmware blob has a bootloader appended")
 	} else {
 		f.HasBL = false
 		fmt.Println("...firmware blob has no bootloader appended")
 	}
-
 
 	var crc_calc uint16
 	if len(f.RawData) < 0x6400 {
@@ -259,7 +317,6 @@ func (f *Firmware) ParseFirmwareNordic() (err error) {
 	f.LastOffset = 0x63ff
 	f.Size = 0x6400
 	f.CRC = uint16(f.RawData[f.Size-2])<<8 | uint16(f.RawData[f.Size-1])
-
 
 	crc_calc = crc16.Checksum(f.RawData[:f.Size-2], crc16.MakeTable(crc16.CRC16_CCITT_FALSE))
 	if crc_calc == f.CRC {
@@ -300,7 +357,7 @@ func ParseFirmwareBin(binblob []byte) (f *Firmware, err error) {
 		errNordic := f.ParseFirmwareNordic()
 		if errNordic != nil {
 			fmt.Printf("No Nordic firmware: %v\n", errNordic)
-			return nil,errors.New("unsupported firmware format - neither nordic, nor TI")
+			return nil, errors.New("unsupported firmware format - neither nordic, nor TI")
 		}
 		fmt.Println("...provided firmware targets Nordic based receiver")
 		f.TargetType = FIRMWARE_TARGET_TYPE_NORDIC
@@ -309,7 +366,60 @@ func ParseFirmwareBin(binblob []byte) (f *Firmware, err error) {
 		fmt.Println("...provided firmware targets Texas Instruments based receiver")
 	}
 
-
-	return f,nil
+	return f, nil
 }
 
+func ParseFirmwareHex(ihex_file_path string) (f *Firmware, err error) {
+	fmt.Printf("Parsing firmware hex file '%s'\n", ihex_file_path)
+
+	file, err := os.Open(ihex_file_path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	f = &Firmware{}
+
+	scanner := bufio.NewScanner(file)
+	lineNo := 0
+	for scanner.Scan() {
+		lineNo++
+		line := scanner.Text()[1:]
+		hbytes, err := hex.DecodeString(line)
+		if err != nil {
+			fmt.Printf("Skip invalid line %d: %s\n", lineNo, line)
+			continue
+		}
+		if len(hbytes) < 4 || (hbytes[3] != 0x00 && hbytes[3] != 0xfd) {
+			// skip lines which are too short or out of interest
+			continue
+		}
+		//fmt.Printf("%4d: % 02x\n", lineNo, hbytes)
+		f.pushRawHexLine(hbytes)
+	}
+
+	// trim down firmware to get rid of prepended data
+	f.RawData = f.RawData[f.StartOffset:f.StartOffset+f.Size]
+
+	//fmt.Printf("FWIRMWAR\n%02x\n", f.RawData)
+
+	fmt.Println("Determin firmware type...")
+	f.TargetType = FIRMWARE_TARGET_TYPE_UNKNOWN
+	err = f.ParseFirmwareTI()
+	if err != nil {
+		fmt.Printf("No Texas Instruments firmware: %v\n", err)
+		// seems to be no TI firmware, try to parse as Nordic
+		errNordic := f.ParseFirmwareNordic()
+		if errNordic != nil {
+			fmt.Printf("No Nordic firmware: %v\n", errNordic)
+			return nil, errors.New("unsupported firmware format - neither nordic, nor TI")
+		}
+		fmt.Println("Provided firmware targets Nordic based receiver")
+		f.TargetType = FIRMWARE_TARGET_TYPE_NORDIC
+	} else {
+		f.TargetType = FIRMWARE_TARGET_TYPE_TI
+		fmt.Println("Provided firmware targets Texas Instruments based receiver")
+	}
+
+	return f, nil
+}
