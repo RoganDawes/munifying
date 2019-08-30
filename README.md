@@ -22,6 +22,7 @@ receiver and device. A vendor patch, on the other hand, will only be applied for
 - dump readable memory range with undocumented HID++ command (disabled in pre-release, used for AES key derivation)
 - store full receiver dump to file in order to re-import it to `mjackit` (disabled for pre-release)
 - show Info of all devices paired to a receiver
+- (cross) flash signed and unsigned firmwares to supported receivers 
 
 ## Note on pre-release
 
@@ -58,6 +59,7 @@ Usage:
 
 Available Commands:
   dump        Dump dongle memory utilizing secret HID++ command
+  flash       Flash a firmware to a receiver (experimental)
   help        Help about any command
   info        Lists relevant information of first receiver found on USB
   pair        Pair new devices to first receiver found on USB
