@@ -24,7 +24,7 @@ receiver and device. A vendor patch, on the other hand, will only be applied for
 - show Info of all devices paired to a receiver
 - (cross) flash signed and unsigned firmwares to supported receivers 
 
-## Note on pre-release
+## Note on pre-release (obsolete - THIS IS THE FULL VERSION)
 
 In sense of responsible disclosure, I agreed with Logitech, not to publish in-depth content related to CVE-2019-13054
 or CVE-2019-13055 (USB based AES key extraction from Texas Instruments based dongles).
