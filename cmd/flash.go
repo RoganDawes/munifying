@@ -31,50 +31,6 @@ var (
 	tmpSignaturePathRaw = ""
 )
 
-func Test() {
-	//TI test firmwares
-
-	//fw_file := "/root/jacking/firmware/RQR39.03_B0035_fake.bin"
-	//fw_file := "/root/jacking/firmware/RQR39.04_B0036_G603.bin"
-	//fw_file := "/root/jacking/firmware/RQR41.00_B0004_SPOTLIGHT.bin"
-	//fw_file := "/root/jacking/firmware/RQR45.00_B0002_R500.bin"
-	//fw_file := "/root/jacking/firmware/RQR24.07_B0030.bin"
-
-	//Nordic test firmwares
-
-	//fw_file := "/root/jacking/firmware/RQR12.01_B0019_dump.raw"
-	//fw_file := "/root/jacking/firmware/RQR12.09_B0030.bin"
-	//fw_file := "/root/jacking/firmware/RQR12.07_B0029.bin"
-	//fw_file := "/root/jacking/firmware/RQR12.05_B0028.bin"
-
-	//fw_file := "/root/jacking/firmware/RQR24.06_B0030.bin"
-	//fw_file := "/root/jacking/firmware/RQR39.04_B0036_G603_patch_for_BOT03.01.bin"
-
-	//Signatures for official firmwares
-
-	//fw_sig_file := "/root/jacking/firmware/RQR24.07_B0030_sig.bin"
-	//fw_sig_file := "/root/jacking/firmware/RQR12.09_B0030_sig.bin"
-
-	//FlashFirmwareFromRawFiles(fw_file, fw_sig_file)
-
-	/*
-	FlashFirmwareFromRawFiles("/root/jacking/firmware/RQR12.09_B0030.bin", "/root/jacking/firmware/RQR12.09_B0030_sig.bin")
-	FlashFirmwareFromRawFiles("/root/jacking/firmware/RQR12.07_B0029.bin", "")
-
-	FlashFirmwareFromRawFiles("/root/jacking/firmware/RQR24.07_B0030.bin", "/root/jacking/firmware/RQR24.07_B0030_sig.bin") // firmware is for >=BOT03.02, but gets automatically patched to run on BOT03.01 if needed (result equals RQR24.06 but with different version name)
-	FlashFirmwareFromRawFiles("/root/jacking/firmware/RQR39.04_B0036_G603.bin", "") //only works for TI dongles with <=BOT03.01 (firmware gets automatically patched to work on this bootloader)
-	*/
-
-	FlashFirmwareFromRawFiles("/root/jacking/firmware/RQR39/RQR39.04.bin", "/root/jacking/firmware/RQR39/RQR3904_B0036_BOT03.02_B0009_PIDAABE_Nano.pkcs1") // firmware is for >=BOT03.02, but gets automatically patched to run on BOT03.01 if needed (result equals RQR24.06 but with different version name)
-
-	/*
-	fw_hex_file := "/root/jacking/fw_updates/RQR12/RQR12.08/RQR12.08_B0030.hex"
-	//fw_hex_file := "/root/jacking/fw_updates/RQR12/RQR12.09/RQR12.09_B0030.shex"
-	//fw_hex_file := "/root/jacking/fw_updates/RQR24/RQR24.07/RQR24.07_B0030.shex"
-	FlashFirmwareFromHexFile(fw_hex_file)
-	*/
-}
-
 func FlashFirmwareFromHexFile(fw_hex_file string, fw_sig_file string) {
 	fw, err := unifying.ParseFirmwareHex(fw_hex_file)
 	if err == nil {
