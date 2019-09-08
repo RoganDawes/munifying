@@ -13,6 +13,7 @@ type FirmwareMajor byte
 
 const (
 	FIRMWARE_MAJOR_UNIFYING_NORDIC      FirmwareMajor = 0x12
+	FIRMWARE_MAJOR_G700_NORDIC          FirmwareMajor = 0x21
 	FIRMWARE_MAJOR_UNIFYING_TI          FirmwareMajor = 0x24
 	FIRMWARE_MAJOR_LIGHTSPEED_TI        FirmwareMajor = 0x39
 	FIRMWARE_MAJOR_SPOTLIGHT_CLICKER_TI FirmwareMajor = 0x41
@@ -23,6 +24,8 @@ func (fm FirmwareMajor) String() string {
 	switch fm {
 	case FIRMWARE_MAJOR_UNIFYING_NORDIC:
 		return "Unifying receiver firmware (Nordic nRF24)"
+	case FIRMWARE_MAJOR_G700_NORDIC:
+		return "G700/G700s receiver firmware (Nordic nRF24)"
 	case FIRMWARE_MAJOR_UNIFYING_TI:
 		return "Unifying receiver firmware (Texas Instruments CC25xx)"
 	case FIRMWARE_MAJOR_LIGHTSPEED_TI:

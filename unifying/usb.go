@@ -18,8 +18,10 @@ const (
 	VID                  gousb.ID = 0x046d
 	PID_UNIFYING         gousb.ID = 0xc52b //cu0007, cu0008, cu0012
 	PID_CU0016_R500      gousb.ID = 0xc540 //cu0016
+//	PID_CU0010           gousb.ID = 0xc534
 	PID_CU0016_SPOTLIGHT gousb.ID = 0xc53e //R-R0011
 	PID_CU0014_R400      gousb.ID = 0xc538 //R-R0011
+	PID_CU0007_G700      gousb.ID = 0xc531 //G700/G700s
 
 	PID_BOOT_LOADER_NORDIC          gousb.ID = 0xaaaa //CU0007, tested BOT01.02_B0014 / RQR12.01_B0019 and BOT01.02_B0015 / RQR12.01_B0019; HW_PLATFORM_ID: nRF24LU1+
 	PID_BOOT_LOADER_TI              gousb.ID = 0xaaac //CU0008 (JNZCU0008), tested BOT03.01_B0008 / RQR24.01_B0023
@@ -43,6 +45,8 @@ type LocalUSBDongle struct {
 
 	showInOut bool
 	wasClosed bool
+
+	epHIDppPacketSize int //32 byte for most receivers, 20 for older ones (G700/G700s)
 }
 
 func (u *LocalUSBDongle) SendUSBReport(msg USBReport) (err error) {
@@ -69,7 +73,7 @@ func (u *LocalUSBDongle) ReceiveUSBReport(timeoutMillis int) (msg USBReport, err
 }
 
 func (u *LocalUSBDongle) rcvLoop() {
-	buf := make([]byte, 32)
+	buf := make([]byte, u.epHIDppPacketSize)
 
 	for {
 		n, err := u.EpInHidPP.ReadContext(u.ctx, buf)
@@ -660,7 +664,12 @@ func (u *LocalUSBDongle) GetDongleInfo() (res DongleInfo, err error) {
 		return
 	}
 
-	res.Serial = dongleInfo2.Parameters[2:6]
+	if err == nil && dongleInfo2 != nil {
+		res.Serial = dongleInfo2.Parameters[2:6]
+	} else {
+		fmt.Println("Couldn't read dongle serial")
+	}
+
 
 	responses, err = u.HIDPP_SendAndCollectResponses(0xff, HIDPP_MSG_ID_GET_REGISTER_REQ, []byte{byte(DONGLE_HIDPP_REGISTER_FIRMWARE_INFO), 0x04, 0x00})
 	for _, r := range responses {
@@ -674,10 +683,13 @@ func (u *LocalUSBDongle) GetDongleInfo() (res DongleInfo, err error) {
 			}
 		}
 	}
+	if err != nil {
+		fmt.Println("Couldn't read bootloader version info")
+	}
 
 	//Bootloader version
 
-	return
+	return res,nil
 }
 
 func (u *LocalUSBDongle) GetSetInfo() (set SetInfo, err error) {
@@ -696,6 +708,7 @@ func (u *LocalUSBDongle) GetSetInfo() (set SetInfo, err error) {
 
 		set.Dongle.NumConnectedDevices = byte(len(set.ConnectedDevices))
 	} else {
+		fmt.Printf("Error reading dongle info %v\n", eDi)
 		return set, eDi
 	}
 	return
@@ -817,6 +830,7 @@ func NewLocalUSBDongle() (res *LocalUSBDongle, err error) {
 	res = &LocalUSBDongle{}
 	res.showInOut = true
 
+	res.epHIDppPacketSize = 32 //default
 	res.UsbCtx = gousb.NewContext()
 
 	if res.Dev, err = res.UsbCtx.OpenDeviceWithVIDPID(VID, PID_UNIFYING); err == nil && res.Dev != nil {
@@ -825,6 +839,12 @@ func NewLocalUSBDongle() (res *LocalUSBDongle, err error) {
 		fmt.Println("Found CU0016 Dongle for Logitech SPOTLIGHT presentation clicker")
 	} else if res.Dev, err = res.UsbCtx.OpenDeviceWithVIDPID(VID, PID_CU0016_R500); err == nil && res.Dev != nil {
 		fmt.Println("Found CU0016 Dongle for R500 presentation clicker")
+	} else if res.Dev, err = res.UsbCtx.OpenDeviceWithVIDPID(VID, PID_CU0007_G700); err == nil && res.Dev != nil {
+		fmt.Println("Found CU0007 Dongle for G700/G700s mouse")
+		res.epHIDppPacketSize = 20 // endpoint for HID++ uses 20 bytes, instead of 32
+//	} else if res.Dev, err = res.UsbCtx.OpenDeviceWithVIDPID(VID, PID_CU0010); err == nil && res.Dev != nil {
+//		fmt.Println("Found CU0010 dongle")
+//		res.epHIDppPacketSize = 20 // endpoint for HID++ uses 20 bytes, instead of 32
 	} else if res.Dev, err = res.UsbCtx.OpenDeviceWithVIDPID(VID, PID_CU0014_R400); err == nil && res.Dev != nil {
 		fmt.Println("Found CU0010 Dongle for M171 mouse")
 	} else if res.Dev, err = res.OpenDeviceWithVID(VID); err == nil && res.Dev != nil {
@@ -858,8 +878,8 @@ Outer:
 		for _, ifaceSettings := range ifaceDesc.AltSettings {
 			//fmt.Printf("%+v\n", ifaceSettings.Endpoints)
 			for _, epDesc := range ifaceSettings.Endpoints {
-				//fmt.Printf("EP descr: %+v\n", epDesc.String())
-				if epDesc.MaxPacketSize == 32 && epDesc.Direction == gousb.EndpointDirectionIn {
+				fmt.Printf("EP descr: %+v\n", epDesc.String())
+				if epDesc.MaxPacketSize == res.epHIDppPacketSize && epDesc.Direction == gousb.EndpointDirectionIn {
 					// This is the HID++ EP
 					//fmt.Printf("EP %+v\n", epDesc.Number)
 					res.IfaceHIDPP, err = res.Config.Interface(ifaceSettings.Number, ifaceSettings.Alternate)
@@ -1157,6 +1177,33 @@ func (u *USBBootloaderDongle) WriteFirmwareSliceToFlashNordic(ramBufAddr uint16,
 		}
 	} else {
 		return errors.New("error writing to flash")
+	}
+}
+
+func (u *USBBootloaderDongle) ReadFirmwareSliceFromFlashNordic(ramBufAddr uint16, sliceLen byte) (err error, firmwareSlice []byte) {
+	if sliceLen > 28 { //Nordic firmware slice should never exceed length 0x1c
+		return errors.New("firmware slice has incorrect size, maximum is 28 bytes"), nil
+	}
+
+
+
+	// Write slice to given address
+	reqWrite := BootloaderReport{Cmd: BOOTLOADER_COMMAND_NORDIC_READ, Addr: ramBufAddr, Len: sliceLen}
+	u.SendUSBReport(reqWrite)
+	rspRead, err := u.ReceiveUSBReport(50000) //50s timeout, last write needs very long (involves Signature check)
+
+	if err == nil {
+		switch rspRead.Cmd {
+		case BOOTLOADER_COMMAND_NORDIC_READ:
+			fmt.Printf("Flash read succeeded - %s\n", rspRead.String())
+			firmwareSlice = make([]byte, rspRead.Len)
+			copy(firmwareSlice, rspRead.Data[:])
+			return
+		default:
+			return errors.New(fmt.Sprintf("error reading from flash: unknown response command %02x", byte(rspRead.Cmd))), nil
+		}
+	} else {
+		return errors.New("error reading from flash"), nil
 	}
 }
 
@@ -1521,31 +1568,27 @@ func (u *USBBootloaderDongle) FlashReceiverNordic(firmware *Firmware) (err error
 		return errors.New(fmt.Sprintf("Firmware doesn't match target's bootloader memory layout (firmware size %#x, intended %#x)", firmware.Size, intended_fw_size))
 	}
 
-
-
 	//erase flash
 	//ToDo: let user decide to continue
 	fmt.Println("Erasing dongle flash: CAUTION the dongle will not be usable, if successive operations fail")
-	for eraseAddr := fwStartAddr; eraseAddr<fwEndAddr; eraseAddr += fwFlashWriteBufSize {
+	for eraseAddr := fwStartAddr; eraseAddr < fwEndAddr; eraseAddr += fwFlashWriteBufSize {
 		err = u.EraseFlashNordic(eraseAddr)
 		if err != nil {
 			return err
 		}
 	}
 
-
 	fmt.Println("Writing firmware")
 	writeSize := uint16(0x1C)
 	if BLmin < 0x04 {
 		writeSize = uint16(0x10) //16 byte per write on old bootloader, on newer ones 28 bytes
 	}
-	for addr := fwStartAddr+0x01; addr <= fwEndAddr; addr += writeSize { //skip first chunk
-		chunkEndAddr := addr+writeSize
+	for addr := fwStartAddr + 0x01; addr <= fwEndAddr; addr += writeSize { //skip first chunk
+		chunkEndAddr := addr + writeSize
 		if chunkEndAddr > firmware.Size {
 			chunkEndAddr = firmware.Size
 		}
-		chunk := fwbytes[addr : chunkEndAddr]
-
+		chunk := fwbytes[addr:chunkEndAddr]
 
 		//fmt.Printf("chunk start %04x len %02x: %02x\n", addr, byte(len(chunk)), chunk)
 		//continue
@@ -1557,17 +1600,15 @@ func (u *USBBootloaderDongle) FlashReceiverNordic(firmware *Firmware) (err error
 		}
 	}
 
-
-
 	// Write signature
 	if signature_required {
 		fmt.Println("Trying to write signature for firmware")
 		for sig_addr := uint16(0x0000); sig_addr <= uint16(0x00ff); sig_addr += 0x1c {
-			chunkEnd := sig_addr+0x1c
+			chunkEnd := sig_addr + 0x1c
 			if chunkEnd > uint16(len(firmware.Signature)) {
 				chunkEnd = uint16(len(firmware.Signature))
 			}
-			sig_chunk := firmware.Signature[sig_addr : chunkEnd]
+			sig_chunk := firmware.Signature[sig_addr:chunkEnd]
 
 			// write signature slice
 			err = u.WriteSignatureSliceNordic(sig_addr, sig_chunk)
@@ -1590,8 +1631,6 @@ func (u *USBBootloaderDongle) FlashReceiverNordic(firmware *Firmware) (err error
 	if err != nil {
 		return err
 	}
-
-
 
 	fmt.Println("Firmware flashing SUCCEEDED")
 	return nil

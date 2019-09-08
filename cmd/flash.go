@@ -131,7 +131,7 @@ func FlashFirmware(firmware *unifying.Firmware) (err error) {
 		fmt.Println("Try to reset dongle into bootloader mode ...")
 		usbReceiver.SwitchToBootloader()
 
-		fmt.Println("... try to re-open dongle in bootloader mode in 5 seconds...")
+		fmt.Println("... try to re-open dongle in bootloader mode in 3 seconds...")
 		time.Sleep(time.Second * 3)
 
 	}
