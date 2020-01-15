@@ -24,6 +24,7 @@ const (
 	PID_CU0007_G700      gousb.ID = 0xc531 //G700/G700s
 
 	PID_BOOT_LOADER_NORDIC          gousb.ID = 0xaaaa //CU0007, tested BOT01.02_B0014 / RQR12.01_B0019 and BOT01.02_B0015 / RQR12.01_B0019; HW_PLATFORM_ID: nRF24LU1+
+	PID_BOOT_LOADER_NORDIC2          gousb.ID = 0x0003 //CU0007, tested BOT01.02_B0014 / RQR12.01_B0019 and BOT01.02_B0015 / RQR12.01_B0019; HW_PLATFORM_ID: nRF24LU1+
 	PID_BOOT_LOADER_TI              gousb.ID = 0xaaac //CU0008 (JNZCU0008), tested BOT03.01_B0008 / RQR24.01_B0023
 	PID_BOOT_LOADER_TI_NANO         gousb.ID = 0xaaad //CU0012, tested BOT03.03_B0009 / RQR24.07_B0030
 	PID_BOOT_LOADER_LIGHTSPEED_G603 gousb.ID = 0xaabe //CU0008 (JNZCU0008a), tested BOT03.02_B0009 / RQR39.04_B0036
@@ -846,7 +847,8 @@ func NewLocalUSBDongle() (res *LocalUSBDongle, err error) {
 //		fmt.Println("Found CU0010 dongle")
 //		res.epHIDppPacketSize = 20 // endpoint for HID++ uses 20 bytes, instead of 32
 	} else if res.Dev, err = res.UsbCtx.OpenDeviceWithVIDPID(VID, PID_CU0014_R400); err == nil && res.Dev != nil {
-		fmt.Println("Found CU0010 Dongle for M171 mouse")
+		fmt.Println("Found CU0010 Dongle for R400 clicker")
+		res.epHIDppPacketSize = 20 // endpoint for HID++ uses 20 bytes, instead of 32
 	} else if res.Dev, err = res.OpenDeviceWithVID(VID); err == nil && res.Dev != nil {
 		fmt.Println("Found unknown Logitech dongle in Firmware Mode (not bootloader)")
 		if (res.Dev.Desc.Product&0xff00 == 0xaa00) {
@@ -1645,6 +1647,8 @@ func NewUSBBootloaderDongle() (res *USBBootloaderDongle, err error) {
 	if res.Dev, err = res.UsbCtx.OpenDeviceWithVIDPID(VID, PID_BOOT_LOADER_LIGHTSPEED_G603); err == nil && res.Dev != nil {
 		fmt.Println("Found Logitech LIGHTSPEED receiver in bootloader mode")
 	} else if res.Dev, err = res.UsbCtx.OpenDeviceWithVIDPID(VID, PID_BOOT_LOADER_NORDIC); err == nil && res.Dev != nil {
+		fmt.Println("Found Unifying receiver with Nordic chip in bootloader mode")
+	} else if res.Dev, err = res.UsbCtx.OpenDeviceWithVIDPID(VID, PID_BOOT_LOADER_NORDIC2); err == nil && res.Dev != nil {
 		fmt.Println("Found Unifying receiver with Nordic chip in bootloader mode")
 	} else if res.Dev, err = res.UsbCtx.OpenDeviceWithVIDPID(VID, PID_BOOT_LOADER_TI); err == nil && res.Dev != nil {
 		fmt.Println("Found Unifying receiver with Texas Instruments chip in bootloader mode")
